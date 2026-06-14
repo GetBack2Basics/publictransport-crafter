@@ -1,0 +1,8 @@
+{
+  "environment": "prod",
+  "storage_root": "wherobots://fgsdb/prod",
+  "log_level": "ERROR",
+  "abs_erp_base_url": "https://www.abs.gov.au/statistics/people/population/regional-population",
+  "opal_patronage_url": "https://opendata.transport.nsw.gov.au/data/dataset/c92c0418-8678-4e39-9c34-70be8c35f7ef/resource/c77b83d7-cdcd-4a0e-9b12-fcc159727589/download/all_modes.csv",
+  "nsw_spatial_portal_base": "https://portal.spatial.nsw.gov.au/server/rest/services"
+}
