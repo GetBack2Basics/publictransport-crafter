@@ -226,6 +226,12 @@ def ingest_nsw_train_network(sedona, storage_root):
                                     .withColumn("year", lit(2026)) \
                                     .drop("geom")
                                     
+    # Normalize station name column (FeatureServer uses generalname, mock uses name)
+    if "generalname" in stations_spatial.columns:
+        stations_spatial = stations_spatial.withColumnRenamed("generalname", "name")
+    elif "name" not in stations_spatial.columns:
+        stations_spatial = stations_spatial.withColumn("name", lit("Unknown Station"))
+                                    
     # Determine Station Classes (Interchange, Commuter, Regional)
     # Heuristics based on name or coordinates
     stations_spatial = stations_spatial.withColumn(
@@ -528,17 +534,29 @@ def ingest_tfnsw_opal_patronage(sedona, storage_root):
 
 if __name__ == "__main__":
     config_profile = os.getenv("WHEROBOTS_ENV", "dev")
-    config_file = f"/home/george-corea/.gemini/antigravity/scratch/publictransport-crafter/config/{config_profile}.json"
     
-    print(f"Loading configuration profile: {config_profile}")
+    # Dynamically resolve config path for different environments (local sandbox vs Wherobots Cloud cluster)
+    config_file = f"config/{config_profile}.json"
+    if not os.path.exists(config_file):
+        possible_paths = [
+            f"../config/{config_profile}.json",
+            f"../../config/{config_profile}.json",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), f"../../config/{config_profile}.json") if "__file__" in globals() else None
+        ]
+        for path in possible_paths:
+            if path and os.path.exists(path):
+                config_file = path
+                break
+                
+    print(f"Loading configuration profile: {config_profile} from {config_file}")
     try:
         with open(config_file, 'r') as f:
             env_config = json.load(f)
     except Exception as e:
         print(f"WARNING: Could not load config file {config_file} ({e}). Reverting to default dev parameters.")
-        env_config = {"storage_root": "wherobots://fgsdb/raw"}
+        env_config = {"storage_root": "file:///tmp/raw"}
         
-    storage_root = env_config.get("storage_root", "wherobots://fgsdb/raw")
+    storage_root = env_config.get("storage_root", "file:///tmp/raw")
     print(f"Storage root directory: {storage_root}")
     
     print("\nInitializing Sedona Context...")
