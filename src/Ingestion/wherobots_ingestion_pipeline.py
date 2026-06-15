@@ -344,11 +344,9 @@ def process_demographics_for_year(sedona, year, shp_dir, local_excel):
     }
     pdf = pdf.rename(columns=rename_map)
     
-    # Scale population for historical/future years to simulate differences
-    scale_factors = {2020: 0.96, 2025: 1.02}
-    factor = scale_factors.get(year, 1.0)
-    pdf["pop_base_year"] = (pdf["pop_base_year"] * factor).astype(int)
-    pdf["pop_estimate"] = (pdf["pop_estimate"] * factor).astype(int)
+    # Convert population estimates directly to integers without mock scaling
+    pdf["pop_base_year"] = pd.to_numeric(pdf["pop_base_year"], errors='coerce').fillna(0).astype(int)
+    pdf["pop_estimate"] = pd.to_numeric(pdf["pop_estimate"], errors='coerce').fillna(0).astype(int)
     
     # Enforce strict type consistency for Excel attributes to prevent Spark inference conflicts
     for col in pdf.columns:
@@ -519,39 +517,12 @@ def ingest_tfnsw_opal_patronage(sedona, storage_root):
     stops_url = "https://raw.githubusercontent.com/GetBack2Basics/publictransport-crafter/main/stops.txt"
     stops_df = None
     
-    try:
-        print(f"Downloading GTFS stops from {stops_url}...")
-        download_file(stops_url, local_stops)
-        pdf_stops = pd.read_csv(local_stops)
-        print("Successfully loaded stops.txt from URL.")
-    except Exception as e:
-        print(f"WARNING: GTFS stops download failed ({e}). Rebuilding stops from org_catalog.fgsdb.nsw_rail_stations...")
-        pdf_stops = None
-        try:
-            stations_df = sedona.table("org_catalog.fgsdb.nsw_rail_stations")
-            # Convert geometries to lat/lon coordinates
-            stops_spark = stations_df.selectExpr(
-                "name as stop_name",
-                "ST_Y(geometry) as stop_lat",
-                "ST_X(geometry) as stop_lon"
-            ).distinct()
-            pdf_stops = stops_spark.toPandas()
-            print("Successfully extracted stops from org_catalog.fgsdb.nsw_rail_stations.")
-        except Exception as e2:
-            print(f"WARNING: Failed to extract stops from Iceberg table ({e2}). Reverting to fallback stops data.")
-            fallback_stops = [
-                ("Central Station", -33.8824, 151.2062),
-                ("Town Hall Station", -33.8732, 151.2061),
-                ("Wynyard Station", -33.8656, 151.2054),
-                ("Circular Quay Station", -33.8615, 151.2114),
-                ("North Sydney Station", -33.8398, 151.2078),
-                ("Parramatta Station", -33.8163, 151.0029),
-                ("Wollongong Station", -34.4278, 150.8931),
-                ("Newcastle Interchange", -32.9248, 151.7612),
-                ("Dubbo Station", -32.2483, 148.6011),
-                ("Jindabyne Bus Stop", -36.4162, 148.6214)
-            ]
-            pdf_stops = pd.DataFrame(fallback_stops, columns=["stop_name", "stop_lat", "stop_lon"])
+    print(f"Downloading GTFS stops from {stops_url}...")
+    download_file(stops_url, local_stops)
+    if not os.path.exists(local_stops):
+        raise FileNotFoundError(f"Missing required resource stops.txt at {local_stops}")
+    pdf_stops = pd.read_csv(local_stops)
+    print("Successfully loaded stops.txt from URL.")
             
     # Enforce strict type consistency for GTFS stops attributes
     for col in pdf_stops.columns:
