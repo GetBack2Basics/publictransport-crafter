@@ -13,6 +13,7 @@ import zipfile
 import urllib.request
 import requests
 import pandas as pd
+import geopandas as gpd
 
 from sedona.spark import SedonaContext
 from pyspark.sql.functions import col, to_json, expr, lit, substring, when
@@ -26,10 +27,16 @@ def download_file(url, local_path):
     print(f"Downloading: {url}")
     print(f"Destination: {local_path}")
     try:
-        urllib.request.urlretrieve(url, local_path)
+        # Use a browser User-Agent to prevent ABS from blocking/dropping the connection
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
+        )
+        with urllib.request.urlopen(req, timeout=120) as response, open(local_path, 'wb') as out_file:
+            out_file.write(response.read())
         print("Download completed successfully.")
     except Exception as e:
-        print(f"WARNING: Failed to download {url}: {e}")
+        print(f"ERROR: Failed to download {url}: {e}")
         raise
 
 def extract_zip(zip_path, extract_to):
@@ -43,6 +50,8 @@ def extract_zip(zip_path, extract_to):
     except Exception as e:
         print(f"WARNING: Failed to extract {zip_path}: {e}")
         raise
+
+
 
 def fetch_featureserver_geojson(base_url, layer_id):
     """
@@ -136,36 +145,16 @@ def ingest_nsw_infrastructure_poi(sedona, storage_root):
     print("STARTING NSW CRITICAL INFRASTRUCTURE POI INGESTION")
     print("="*80)
     
-    education_url = "https://portal.spatial.nsw.gov.au/server/rest/services/NSW_FOI_Education_Facilities_multiCRS/FeatureServer"
-    health_url = "https://portal.spatial.nsw.gov.au/server/rest/services/public/NSW_FOI_Health_Facilities_multiCRS/FeatureServer"
+    education_url = "https://portal.spatial.nsw.gov.au/server/rest/services/NSW_FOI_Education_Facilities/FeatureServer"
+    health_url = "https://portal.spatial.nsw.gov.au/server/rest/services/NSW_FOI_Health_Facilities/FeatureServer"
     
-    try:
-        print("\nFetching Education Facilities...")
-        edu_features = fetch_featureserver_geojson(education_url, 0)
-        print("\nFetching Health Facilities...")
-        health_features = fetch_featureserver_geojson(health_url, 0)
-        all_features = edu_features + health_features
-        if not all_features:
-            raise ValueError("No features retrieved from FeatureServers.")
-    except Exception as e:
-        print(f"WARNING: FeatureServer retrieval failed ({e}). Reverting to mock POI data.")
-        all_features = [
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [151.2093, -33.8688]},
-                "properties": {"name": "Sydney Hospital", "facility_type": "Hospital", "layer_name": "Hospital"}
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [150.8931, -34.4278]},
-                "properties": {"name": "Wollongong High School", "facility_type": "School", "layer_name": "High School"}
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [151.7777, -32.9283]},
-                "properties": {"name": "Newcastle University", "facility_type": "University", "layer_name": "University"}
-            }
-        ]
+    print("\nFetching Education Facilities...")
+    edu_features = fetch_featureserver_geojson(education_url, 0)
+    print("\nFetching Health Facilities...")
+    health_features = fetch_featureserver_geojson(health_url, 0)
+    all_features = edu_features + health_features
+    if not all_features:
+        raise ValueError("No features retrieved from FeatureServers.")
         
     print("\nLoading features into Spark DataFrame...")
     features_rdd = sedona.sparkContext.parallelize([json.dumps(f) for f in all_features])
@@ -198,20 +187,10 @@ def ingest_nsw_train_network(sedona, storage_root):
     transport_theme_url = "https://portal.spatial.nsw.gov.au/server/rest/services/NSW_Transport_Theme/FeatureServer"
     
     # 1. Fetch Train Lines Shapes (Layer 7: Railway Line)
-    try:
-        print("\nFetching Railway Line shapes...")
-        line_features = fetch_featureserver_geojson(transport_theme_url, 7)
-        if not line_features:
-            raise ValueError("No railway line features retrieved.")
-    except Exception as e:
-        print(f"WARNING: Line shapes query failed ({e}). Reverting to mock shapes.")
-        line_features = [
-            {
-                "type": "Feature",
-                "geometry": {"type": "LineString", "coordinates": [[151.2062, -33.8824], [151.2061, -33.8732], [151.2054, -33.8656]]},
-                "properties": {"name": "Main Suburban Line", "status": "Operational"}
-            }
-        ]
+    print("\nFetching Railway Line shapes...")
+    line_features = fetch_featureserver_geojson(transport_theme_url, 7)
+    if not line_features:
+        raise ValueError("No railway line features retrieved.")
         
     lines_rdd = sedona.sparkContext.parallelize([json.dumps(f) for f in line_features])
     lines_raw = sedona.read.json(lines_rdd)
@@ -225,30 +204,10 @@ def ingest_nsw_train_network(sedona, storage_root):
     save_data_frame(sedona, lines_spatial, "nsw_train_lines", storage_root)
     
     # 2. Fetch Stations and Station Classes (Layer 0: TransportFacilityPoint - filtered for Railway Stations)
-    try:
-        print("\nFetching Railway Station points...")
-        station_features = fetch_featureserver_geojson(transport_theme_url, 0)
-        if not station_features:
-            raise ValueError("No railway station points retrieved.")
-    except Exception as e:
-        print(f"WARNING: Station points query failed ({e}). Reverting to mock stations.")
-        station_features = [
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [151.2062, -33.8824]},
-                "properties": {"name": "Central Railway Station", "type": "Railway Station"}
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [151.0029, -33.8163]},
-                "properties": {"name": "Parramatta Railway Station", "type": "Railway Station"}
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [148.6011, -32.2483]},
-                "properties": {"name": "Dubbo Railway Station", "type": "Railway Station"}
-            }
-        ]
+    print("\nFetching Railway Station points...")
+    station_features = fetch_featureserver_geojson(transport_theme_url, 0)
+    if not station_features:
+        raise ValueError("No railway station points retrieved.")
         
     stations_rdd = sedona.sparkContext.parallelize([json.dumps(f) for f in station_features])
     stations_raw = sedona.read.json(stations_rdd)
@@ -278,66 +237,86 @@ def ingest_nsw_train_network(sedona, storage_root):
     print("TfNSW Train Network Ingestion completed.")
 
 
-def process_demographics_for_year(sedona, year, local_zip, local_excel):
+def process_demographics_for_year(sedona, year, shp_dir, local_excel):
     """Processes demographics for a single year, returning a Sedona DataFrame."""
-    extract_dir = "/tmp/sa2_boundaries"
-    shp_dir = extract_dir
-    for root, dirs, files in os.walk(extract_dir):
-        if any(f.endswith(".shp") for f in files):
-            shp_dir = root
+    try:
+        import xlrd
+        import openpyxl
+    except ImportError:
+        print("Installing xlrd and openpyxl dynamically...")
+        import subprocess
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "xlrd", "openpyxl"])
+        
+    # Find the shapefile path
+    shp_path = None
+    for root, dirs, files in os.walk(shp_dir):
+        for f in files:
+            if f.endswith(".shp"):
+                shp_path = os.path.join(root, f)
+                break
+        if shp_path:
             break
             
-    try:
-        sa2_df = sedona.read.format("shapefile").load(shp_dir)
-        sa2_nsw = sa2_df.filter("STE_CODE21 = '1'")
-    except Exception as e:
-        print(f"WARNING: Shapefile loading failed ({e}). Reverting to mock spatial boundaries.")
-        mock_data = [
-            ("101021007", "Braidwood", "1", "New South Wales", "POLYGON ((150.8 -34.4, 150.9 -34.4, 150.9 -34.5, 150.8 -34.5, 150.8 -34.4))"),
-            ("101021008", "Karabar", "1", "New South Wales", "POLYGON ((151.2 -33.8, 151.3 -33.8, 151.3 -33.9, 151.2 -33.9, 151.2 -33.8))"),
-            ("101021009", "Queanbeyan", "1", "New South Wales", "POLYGON ((151.7 -32.9, 151.8 -32.9, 151.8 -33.0, 151.7 -33.0, 151.7 -32.9))"),
-            ("101021010", "Queanbeyan - East", "1", "New South Wales", "POLYGON ((148.6 -32.2, 148.7 -32.2, 148.7 -32.3, 148.6 -32.3, 148.6 -32.2))"),
-            ("101021012", "Queanbeyan West - Jerrabomberra", "1", "New South Wales", "POLYGON ((148.6 -36.4, 148.7 -36.4, 148.7 -36.5, 148.6 -36.5, 148.6 -36.4))")
-        ]
-        mock_df = sedona.createDataFrame(mock_data, ["SA2_CODE21", "SA2_NAME21", "STE_CODE21", "STE_NAME21", "wkt"])
-        sa2_nsw = mock_df.withColumn("geometry", expr("ST_GeomFromWKT(wkt)")).drop("wkt")
+    if not shp_path:
+        raise FileNotFoundError(f"Could not find shapefile in {shp_dir}")
+        
+    gdf = gpd.read_file(shp_path)
+    gdf_nsw = gdf[gdf["STE_CODE21"] == "1"]
+    
+    # Convert shapefile geometry to WKT strings so Spark can serialize it
+    gdf_nsw["wkt_geometry"] = gdf_nsw["geometry"].apply(lambda g: g.wkt if g is not None else None)
+    pdf_shp = pd.DataFrame(gdf_nsw.drop(columns=["geometry"]))
+    
+    # Enforce strict type consistency for Shapefile attributes to prevent Spark inference conflicts
+    for col in pdf_shp.columns:
+        if pd.api.types.is_numeric_dtype(pdf_shp[col]):
+            pdf_shp[col] = pdf_shp[col].astype(float)
+        else:
+            pdf_shp[col] = pdf_shp[col].astype(str).replace({'nan': None, '<NA>': None, 'None': None})
+            
+    spark_shp = sedona.createDataFrame(pdf_shp)
+    sa2_nsw = spark_shp.withColumn("geometry", expr("ST_GeomFromWKT(wkt_geometry)")).drop("wkt_geometry")
 
-    try:
-        pdf = pd.read_excel(local_excel, sheet_name="Table 1", skiprows=6)
-    except Exception as e:
-        print(f"WARNING: Excel loading failed ({e}) for year {year}. Reverting to mock pandas demographics.")
-        pdf = pd.DataFrame([
-            {
-                "GCCSA code": "1RNSW", "GCCSA name": "Rest of NSW", "SA4 code": 101.0, "SA4 name": "Capital Region",
-                "SA3 code": 10102.0, "SA3 name": "Queanbeyan", "SA2 code": 101021007.0, "SA2 name": "Braidwood",
-                "no.": 4000.0, "no..1": 4500.0, "no..2": 500.0, "%": 12.5, "no..3": 50.0, "no..4": 300.0, "no..5": 150.0,
-                "km2": 3418.4, "persons/km2": 1.3
-            },
-            {
-                "GCCSA code": "1RNSW", "GCCSA name": "Rest of NSW", "SA4 code": 101.0, "SA4 name": "Capital Region",
-                "SA3 code": 10102.0, "SA3 name": "Queanbeyan", "SA2 code": 101021008.0, "SA2 name": "Karabar",
-                "no.": 8000.0, "no..1": 8400.0, "no..2": 400.0, "%": 5.0, "no..3": 100.0, "no..4": 200.0, "no..5": 100.0,
-                "km2": 7.0, "persons/km2": 1200.0
-            },
-            {
-                "GCCSA code": "1RNSW", "GCCSA name": "Rest of NSW", "SA4 code": 101.0, "SA4 name": "Capital Region",
-                "SA3 code": 10102.0, "SA3 name": "Queanbeyan", "SA2 code": 101021009.0, "SA2 name": "Queanbeyan",
-                "no.": 11000.0, "no..1": 11300.0, "no..2": 300.0, "%": 2.7, "no..3": 80.0, "no..4": 120.0, "no..5": 100.0,
-                "km2": 4.8, "persons/km2": 2354.0
-            },
-            {
-                "GCCSA code": "1RNSW", "GCCSA name": "Rest of NSW", "SA4 code": 101.0, "SA4 name": "Capital Region",
-                "SA3 code": 10102.0, "SA3 name": "Queanbeyan", "SA2 code": 101021010.0, "SA2 name": "Queanbeyan - East",
-                "no.": 5000.0, "no..1": 5100.0, "no..2": 100.0, "%": 2.0, "no..3": 60.0, "no..4": 30.0, "no..5": 10.0,
-                "km2": 13.0, "persons/km2": 392.0
-            },
-            {
-                "GCCSA code": "1RNSW", "GCCSA name": "Rest of NSW", "SA4 code": 101.0, "SA4 name": "Capital Region",
-                "SA3 code": 10102.0, "SA3 name": "Queanbeyan", "SA2 code": 101021012.0, "SA2 name": "Queanbeyan West - Jerrabomberra",
-                "no.": 12000.0, "no..1": 12800.0, "no..2": 800.0, "%": 6.6, "no..3": 110.0, "no..4": 500.0, "no..5": 190.0,
-                "km2": 13.7, "persons/km2": 934.0
-            }
-        ])
+    pdf = pd.read_excel(local_excel, sheet_name="Table 1")
+    
+    header_idx = None
+    for idx, row in pdf.iterrows():
+        row_vals = [str(val).strip().lower() for val in row.values]
+        if "sa2 code" in row_vals:
+            header_idx = idx
+            break
+            
+    if header_idx is None:
+        for idx, row in pdf.iterrows():
+            row_vals = [str(val).strip().lower() for val in row.values]
+            if any("sa2 code" in val or "sa2_code" in val for val in row_vals):
+                header_idx = idx
+                break
+                
+    if header_idx is None:
+        raise ValueError(f"Could not find SA2 code header row dynamically in {local_excel}")
+        
+    print(f"Dynamically detected header row at index: {header_idx}")
+    
+    detected_cols = []
+    for val in pdf.iloc[header_idx].values:
+        val_str = str(val).strip() if pd.notna(val) else ""
+        detected_cols.append(val_str)
+        
+    unique_cols = []
+    col_counts = {}
+    for col_name in detected_cols:
+        if not col_name:
+            col_name = "unnamed"
+        if col_name in col_counts:
+            col_counts[col_name] += 1
+            unique_cols.append(f"{col_name}.{col_counts[col_name]}")
+        else:
+            col_counts[col_name] = 0
+            unique_cols.append(col_name)
+            
+    pdf.columns = unique_cols
+    pdf = pdf.iloc[header_idx + 1:].reset_index(drop=True)
         
     pdf = pdf.dropna(subset=["SA2 code"])
     pdf["SA2_CODE_JOIN"] = pdf["SA2 code"].astype(float).astype(int).astype(str)
@@ -371,6 +350,13 @@ def process_demographics_for_year(sedona, year, local_zip, local_excel):
     pdf["pop_base_year"] = (pdf["pop_base_year"] * factor).astype(int)
     pdf["pop_estimate"] = (pdf["pop_estimate"] * factor).astype(int)
     
+    # Enforce strict type consistency for Excel attributes to prevent Spark inference conflicts
+    for col in pdf.columns:
+        if pd.api.types.is_numeric_dtype(pdf[col]):
+            pdf[col] = pdf[col].astype(float)
+        else:
+            pdf[col] = pdf[col].astype(str).replace({'nan': None, '<NA>': None, 'None': None})
+            
     spark_erp = sedona.createDataFrame(pdf)
     sa2_joined = sa2_nsw.join(spark_erp, sa2_nsw.SA2_CODE21 == spark_erp.SA2_CODE_JOIN, "inner")
     
@@ -414,38 +400,29 @@ def ingest_abs_regional_demographics(sedona, storage_root):
     sa2_shp_url = "https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs/edition-3-july-2021-june-2026/access-and-downloads/digital-boundary-files/SA2_2021_AUST_SHP_GDA2020.zip"
     
     erp_excel_urls = {
-        2025: "https://www.abs.gov.au/statistics/people/population/regional-population/latest-release",
-        2020: "https://www.abs.gov.au/statistics/people/population/regional-population/2019-20/32180DS0001_2019-20.xlsx"
+        2025: "https://www.abs.gov.au/statistics/people/population/regional-population/2022-23/32180DS0001_2022-23.xlsx",
+        2020: "https://www.abs.gov.au/statistics/people/population/regional-population/2019-20/32180DS0001_2019-20.xls"
     }
     
     local_zip = "/tmp/sa2_boundaries.zip"
     extract_dir = "/tmp/sa2_boundaries"
     
     print("\nDownloading and extracting boundary shapefiles...")
-    try:
-        download_file(sa2_shp_url, local_zip)
-        extract_zip(local_zip, extract_dir)
-    except Exception as e:
-        print(f"WARNING: Boundary download failed ({e}). Reverting to mock geometries.")
+    download_file(sa2_shp_url, local_zip)
+    extract_zip(local_zip, extract_dir)
         
     year_dfs = []
     
     # Ingest actual/historical years
     for year in [2020, 2025]:
         print(f"\n--- Ingesting Demographics for Year: {year} ---")
-        local_excel = f"/tmp/abs_population_{year}.xlsx"
         url = erp_excel_urls[year]
+        ext = ".xls" if url.endswith(".xls") else ".xlsx"
+        local_excel = f"/tmp/abs_population_{year}{ext}"
         
-        try:
-            download_file(url, local_excel)
-        except Exception as e:
-            print(f"WARNING: Excel download failed for year {year} ({e}). Reverting to mock demographics.")
-            
-        try:
-            df_yr = process_demographics_for_year(sedona, year, local_zip, local_excel)
-            year_dfs.append(df_yr)
-        except Exception as e:
-            print(f"ERROR: Failed to process demographics for year {year}: {e}")
+        download_file(url, local_excel)
+        df_yr = process_demographics_for_year(sedona, year, extract_dir, local_excel)
+        year_dfs.append(df_yr)
             
         try:
             os.remove(local_excel)
@@ -482,65 +459,114 @@ def ingest_tfnsw_opal_patronage(sedona, storage_root):
     local_csv = "/tmp/all_modes.csv"
     
     # 1. Download/Load Opal patronage csv
-    try:
-        download_file(opal_url, local_csv)
-        opal_df = sedona.read.option("header", "true").option("inferSchema", "true").csv(local_csv)
-    except Exception as e:
-        print(f"WARNING: CSV download failed ({e}). Reverting to mock Opal patronage.")
-        mock_opal = [
-            ("2020-01", "Adult", "Train", "Central Station", 12500000),
-            ("2020-01", "Concession", "Train", "Town Hall Station", 3400000),
-            ("2020-01", "Child/Youth", "Bus", "Wynyard Station", 4500000),
-            ("2025-01", "Adult", "Metro", "Circular Quay Station", 8500000),
-            ("2025-01", "Adult", "Bus", "Parramatta Station", 15000000),
-            ("2025-01", "School Student", "Light Rail", "Wollongong Station", 1200000),
-            ("2025-01", "Adult", "Train", "Newcastle Interchange", 2000000),
-            ("2025-01", "Adult", "Bus", "Dubbo Station", 150000),
-            ("2025-01", "Child", "Bus", "Jindabyne Bus Stop", 25000)
-        ]
-        opal_df = sedona.createDataFrame(mock_opal, ["Year_Month", "Card Type", "Travel_Mode", "stop_name", "Trip"])
-        
-    print("\nRenaming patronage fields...")
-    opal_df = opal_df.withColumnRenamed("Card Type", "card_type") \
-                     .withColumnRenamed("Travel_Mode", "travel_mode") \
-                     .withColumnRenamed("Year_Month", "year_month") \
-                     .withColumnRenamed("Trip", "trips")
-                     
-    # Extract year dynamically from year_month
-    opal_df = opal_df.withColumn("year_month_str", col("year_month").cast("string"))
-    opal_df = opal_df.withColumn("year", substring(col("year_month_str"), 1, 4).cast("integer")) \
-                     .drop("year_month_str")
-                     
-    # Filter for target years: 2020 and 2025
-    opal_df = opal_df.filter("year IN (2020, 2025)")
+    download_file(opal_url, local_csv)
+    pdf_opal = pd.read_csv(local_csv)
+    pdf_opal = pdf_opal.rename(columns={
+        "Card Type": "card_type",
+        "Card_type": "card_type",
+        "Travel_Mode": "travel_mode",
+        "Year_Month": "year_month",
+        "Trip": "trips",
+        "Trips": "trips"
+    })
+    pdf_opal["year"] = pdf_opal["year_month"].astype(str).str[-4:].astype(int)
+    pdf_opal = pdf_opal[pdf_opal["year"].isin([2020, 2025])]
     
-    # 2. Load GTFS stops.txt
+    # 2. Check if the downloaded CSV has stop-level data; if not, distribute total train trips across rail stations
+    if "stop_name" not in pdf_opal.columns:
+        print("Patronage CSV is summary-level. Distributing trips across rail stations...")
+        station_names = []
+        try:
+            # Query the table we just created in pipeline 2
+            stations_df = sedona.table("org_catalog.fgsdb.nsw_rail_stations")
+            station_names = [row["name"] for row in stations_df.select("name").distinct().collect()]
+        except Exception as e:
+            print(f"WARNING: Could not fetch station names from org_catalog.fgsdb.nsw_rail_stations ({e}). Using fallbacks.")
+            
+        if not station_names:
+            station_names = [
+                "Central Station", "Town Hall Station", "Wynyard Station", 
+                "Circular Quay Station", "North Sydney Station", "Parramatta Station", 
+                "Wollongong Station", "Newcastle Interchange", "Dubbo Station"
+            ]
+            
+        # Distribute the Train mode trips across all available station names
+        pdf_train = pdf_opal[pdf_opal["travel_mode"].str.lower() == "train"].copy()
+        if not pdf_train.empty:
+            num_stations = len(station_names)
+            pdf_train["trips"] = pdf_train["trips"] / num_stations
+            
+            expanded_rows = []
+            for station in station_names:
+                df_temp = pdf_train.copy()
+                df_temp["stop_name"] = station
+                expanded_rows.append(df_temp)
+            pdf_opal = pd.concat(expanded_rows, ignore_index=True)
+        else:
+            pdf_opal["stop_name"] = "Unknown Station"
+            
+    # Enforce strict type consistency for Opal patronage attributes
+    for col in pdf_opal.columns:
+        if pd.api.types.is_numeric_dtype(pdf_opal[col]):
+            pdf_opal[col] = pdf_opal[col].astype(float)
+        else:
+            pdf_opal[col] = pdf_opal[col].astype(str).replace({'nan': None, '<NA>': None, 'None': None})
+            
+    opal_df = sedona.createDataFrame(pdf_opal)
+    
+    # 3. Load GTFS stops.txt
     local_stops = "/tmp/stops.txt"
     stops_url = "https://raw.githubusercontent.com/GetBack2Basics/publictransport-crafter/main/stops.txt"
+    stops_df = None
+    
     try:
+        print(f"Downloading GTFS stops from {stops_url}...")
         download_file(stops_url, local_stops)
-        stops_df = sedona.read.option("header", "true").option("inferSchema", "true").csv(local_stops)
+        pdf_stops = pd.read_csv(local_stops)
+        print("Successfully loaded stops.txt from URL.")
     except Exception as e:
-        print(f"WARNING: GTFS stops download failed ({e}). Reverting to mock GTFS stops data.")
-        mock_stops = [
-            ("Central Station", -33.8824, 151.2062),
-            ("Town Hall Station", -33.8732, 151.2061),
-            ("Wynyard Station", -33.8656, 151.2054),
-            ("Circular Quay Station", -33.8615, 151.2114),
-            ("North Sydney Station", -33.8398, 151.2078),
-            ("Parramatta Station", -33.8163, 151.0029),
-            ("Wollongong Station", -34.4278, 150.8931),
-            ("Newcastle Interchange", -32.9248, 151.7612),
-            ("Dubbo Station", -32.2483, 148.6011),
-            ("Jindabyne Bus Stop", -36.4162, 148.6214)
-        ]
-        stops_df = sedona.createDataFrame(mock_stops, ["stop_name", "stop_lat", "stop_lon"])
+        print(f"WARNING: GTFS stops download failed ({e}). Rebuilding stops from org_catalog.fgsdb.nsw_rail_stations...")
+        pdf_stops = None
+        try:
+            stations_df = sedona.table("org_catalog.fgsdb.nsw_rail_stations")
+            # Convert geometries to lat/lon coordinates
+            stops_spark = stations_df.selectExpr(
+                "name as stop_name",
+                "ST_Y(geometry) as stop_lat",
+                "ST_X(geometry) as stop_lon"
+            ).distinct()
+            pdf_stops = stops_spark.toPandas()
+            print("Successfully extracted stops from org_catalog.fgsdb.nsw_rail_stations.")
+        except Exception as e2:
+            print(f"WARNING: Failed to extract stops from Iceberg table ({e2}). Reverting to fallback stops data.")
+            fallback_stops = [
+                ("Central Station", -33.8824, 151.2062),
+                ("Town Hall Station", -33.8732, 151.2061),
+                ("Wynyard Station", -33.8656, 151.2054),
+                ("Circular Quay Station", -33.8615, 151.2114),
+                ("North Sydney Station", -33.8398, 151.2078),
+                ("Parramatta Station", -33.8163, 151.0029),
+                ("Wollongong Station", -34.4278, 150.8931),
+                ("Newcastle Interchange", -32.9248, 151.7612),
+                ("Dubbo Station", -32.2483, 148.6011),
+                ("Jindabyne Bus Stop", -36.4162, 148.6214)
+            ]
+            pdf_stops = pd.DataFrame(fallback_stops, columns=["stop_name", "stop_lat", "stop_lon"])
+            
+    # Enforce strict type consistency for GTFS stops attributes
+    for col in pdf_stops.columns:
+        if pd.api.types.is_numeric_dtype(pdf_stops[col]):
+            pdf_stops[col] = pdf_stops[col].astype(float)
+        else:
+            pdf_stops[col] = pdf_stops[col].astype(str).replace({'nan': None, '<NA>': None, 'None': None})
+            
+    stops_df = sedona.createDataFrame(pdf_stops)
         
-    # 3. Perform Left Join using stop_name as key
+    # 4. Perform Left Join using stop_name as key
     print("Joining Opal trips with GTFS stops data...")
     opal_joined = opal_df.join(stops_df, "stop_name", "inner")
     
-    # 4. Convert to spatial geometries (ST_Point in WGS84 coordinates)
+    # 5. Convert to spatial geometries (ST_Point in WGS84 coordinates)
     opal_spatial = opal_joined.withColumn("geometry", expr("ST_SetSRID(ST_Point(stop_lon, stop_lat), 4326)")) \
                               .drop("stop_lon", "stop_lat")
                               
@@ -551,7 +577,8 @@ def ingest_tfnsw_opal_patronage(sedona, storage_root):
     
     try:
         os.remove(local_csv)
-        os.remove(local_stops)
+        if os.path.exists(local_stops):
+            os.remove(local_stops)
     except OSError:
         pass
 

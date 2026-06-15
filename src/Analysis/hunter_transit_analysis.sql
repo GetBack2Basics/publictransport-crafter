@@ -3,7 +3,7 @@
 -- ==============================================================================
 
 -- 1. Create Bounding Box / Spatial Filter for Newcastle & Lake Macquarie LGAs
--- Newcastle Bounding Box envelope: POLYGON ((151.4 -33.15, 151.85 -33.15, 151.85 -32.8, 151.4 -32.8, 151.4 -33.15))
+-- Newcastle Bounding Box envelope: POLYGON ((151.10 -33.15, 151.85 -33.15, 151.85 -32.70, 151.10 -32.70, 151.10 -33.15))
 
 -- 2. Query 1: Filter SA2 demographic population within Newcastle & Lake Macquarie
 SELECT 
@@ -18,7 +18,7 @@ WHERE
     year = 2025
     AND (sa3_name = 'Newcastle' OR sa3_name = 'Lake Macquarie' OR sa3_name = 'Hunter Valley' OR 
          ST_Contains(
-             ST_GeomFromText('POLYGON ((151.4 -33.15, 151.85 -33.15, 151.85 -32.8, 151.4 -32.8, 151.4 -33.15))'), 
+             ST_GeomFromText('POLYGON ((151.10 -33.15, 151.85 -33.15, 151.85 -32.70, 151.10 -32.70, 151.10 -33.15))'), 
              geometry
          ));
 
@@ -33,7 +33,7 @@ FROM
     wherobots_open_data.overture_maps_foundation.transportation_segment
 WHERE 
     ST_Contains(
-        ST_GeomFromText('POLYGON ((151.4 -33.15, 151.85 -33.15, 151.85 -32.8, 151.4 -32.8, 151.4 -33.15))'), 
+        ST_GeomFromText('POLYGON ((151.10 -33.15, 151.85 -33.15, 151.85 -32.70, 151.10 -32.70, 151.10 -33.15))'), 
         geometry
     );
 
@@ -43,7 +43,7 @@ WITH RoadBuffers AS (
     SELECT ST_Union_Aggr(ST_Buffer(geometry, 0.018)) AS unioned_buffer
     FROM wherobots_open_data.overture_maps_foundation.transportation_segment
     WHERE ST_Contains(
-        ST_GeomFromText('POLYGON ((151.4 -33.15, 151.85 -33.15, 151.85 -32.8, 151.4 -32.8, 151.4 -33.15))'), 
+        ST_GeomFromText('POLYGON ((151.10 -33.15, 151.85 -33.15, 151.85 -32.70, 151.10 -32.70, 151.10 -33.15))'), 
         geometry
     )
 )
@@ -57,7 +57,7 @@ FROM
     RoadBuffers b
 WHERE 
     p.year = 2025
-    AND ST_Within(p.geometry, ST_GeomFromText('POLYGON ((151.4 -33.15, 151.85 -33.15, 151.85 -32.8, 151.4 -32.8, 151.4 -33.15))'))
+    AND ST_Within(p.geometry, ST_GeomFromText('POLYGON ((151.10 -33.15, 151.85 -33.15, 151.85 -32.70, 151.10 -32.70, 151.10 -33.15))'))
     AND NOT ST_Intersects(p.geometry, b.unioned_buffer)
 GROUP BY 
     p.stop_name, p.travel_mode, p.geometry;
@@ -73,7 +73,7 @@ FROM
     org_catalog.fgsdb.tfnsw_opal_usage
 WHERE 
     year = 2025
-    AND ST_Within(geometry, ST_GeomFromText('POLYGON ((151.4 -33.15, 151.85 -33.15, 151.85 -32.8, 151.4 -32.8, 151.4 -33.15))'))
+    AND ST_Within(geometry, ST_GeomFromText('POLYGON ((151.10 -33.15, 151.85 -33.15, 151.85 -32.70, 151.10 -32.70, 151.10 -33.15))'))
 GROUP BY 
     stop_name, travel_mode, geometry
 ORDER BY 

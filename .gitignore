@@ -4,3 +4,4 @@ __pycache__/
 *.pyd
 .ipynb_checkpoints/
 .DS_Store
+raw_data_explorer.html
