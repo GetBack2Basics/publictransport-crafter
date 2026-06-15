@@ -13,7 +13,8 @@ publictransport-crafter/
 │   ├── stg.json            # Staging storage target & log level
 │   └── prod.json           # Production storage target & log level
 ├── notebooks/              # Interactive development and demonstration notebooks
-│   └── wherobots_ingestion_pipeline.ipynb
+│   ├── wherobots_ingestion_pipeline.ipynb
+│   └── raw_data_explorer.ipynb # Kepler.gl spatial visualization setup
 ├── src/
 │   ├── Ingestion/          # PySpark/Sedona pipeline scripts
 │   │   └── wherobots_ingestion_pipeline.py
@@ -87,3 +88,45 @@ The analysis script [hunter_transit_analysis.sql](src/Analysis/hunter_transit_an
 4. **Query 4**: Rank top transit chokepoints based on Opal patronage records.
 
 These queries can be run directly inside the Wherobots SQL editor or within a Sedona-enabled notebook.
+
+---
+
+## 🛠️ Analysis-Only Workflows (Without Ingestion Updates)
+If the primary ingestion pipelines are stable and do not require modification, you can perform new spatial analysis work directly against the persisted Iceberg tables:
+1. **Connect directly to the Database Catalog**: You do not need to rerun the ingestion. In your notebook, establish the standard Sedona context:
+   ```python
+   from sedona.spark import *
+   config = SedonaContext.builder().getOrCreate()
+   sedona = SedonaContext.create(config)
+   ```
+2. **Query Persistent Tables**: Reference the catalog prefix `org_catalog.fgsdb` directly:
+   ```python
+   results_df = sedona.sql("""
+       SELECT sa2_name, pop_estimate 
+       FROM org_catalog.fgsdb.abs_demographics 
+       WHERE pop_density > 2000
+   """)
+   ```
+3. **Execute SQL via Wherobots Query Editor**: You can log into the Wherobots Data Hub dashboard and run queries directly in the SQL query editor UI, saving results to your workspace.
+
+---
+
+## 🗺️ Connecting and Visualizing in Felt.com
+To visualize large-scale geospatial results processed in Wherobots inside the collaborative [Felt](https://felt.com) platform:
+
+### 1. Export Data from Wherobots
+Save your Spark analysis outputs as **GeoParquet** or **GeoJSON** directly to a shared S3 bucket (or download locally from the Wherobots workspace):
+```python
+# Save DataFrame to GeoParquet format
+df.write.format("geoparquet").save("s3://your-wherobots-bucket/output/hunter_transit.parquet")
+```
+
+### 2. Import into Felt
+*   **Via Web Interface**: Log into Felt, create a new map, and drag-and-drop the exported `.parquet` or `.geojson` file directly onto the map. Felt natively parses Sedona's WGS84 GeoParquet format.
+*   **Via Felt API (Programmatic)**: You can upload your data dynamically from your notebook using the Felt REST API:
+    ```bash
+    curl -X POST "https://felt.com/api/v1/maps/{map_id}/uploads" \
+      -H "Authorization: Bearer <YOUR_FELT_API_TOKEN>" \
+      -F "file=@/path/to/hunter_transit.parquet"
+    ```
+Once imported, you can collaborate, style your layers, and share interactive dashboards with stakeholders.
