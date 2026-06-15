@@ -13,7 +13,7 @@ SELECT
     pop_density,
     geometry
 FROM 
-    abs_demographics
+    org_catalog.fgsdb.abs_demographics
 WHERE 
     year = 2025
     AND (sa3_name = 'Newcastle' OR sa3_name = 'Lake Macquarie' OR sa3_name = 'Hunter Valley' OR 
@@ -53,7 +53,7 @@ SELECT
     SUM(p.trips) AS total_trips,
     p.geometry
 FROM 
-    tfnsw_opal_usage p,
+    org_catalog.fgsdb.tfnsw_opal_usage p,
     RoadBuffers b
 WHERE 
     p.year = 2025
@@ -70,7 +70,7 @@ SELECT
     SUM(trips) AS total_trips,
     geometry
 FROM 
-    tfnsw_opal_usage
+    org_catalog.fgsdb.tfnsw_opal_usage
 WHERE 
     year = 2025
     AND ST_Within(geometry, ST_GeomFromText('POLYGON ((151.4 -33.15, 151.85 -33.15, 151.85 -32.8, 151.4 -32.8, 151.4 -33.15))'))

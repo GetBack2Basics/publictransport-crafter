@@ -89,6 +89,43 @@ def fetch_featureserver_geojson(base_url, layer_id):
     print(f"Total features retrieved from layer {layer_id}: {len(all_features)}")
     return all_features
 
+def save_data_frame(sedona, df, table_name, storage_root, partition_col="year"):
+    """
+    Saves a Sedona DataFrame as a Havasu/Iceberg table (wherobots.fgsdb.<table_name>)
+    if storage_root starts with 'wherobots://' or running on Wherobots Cloud,
+    otherwise saves as a local GeoParquet file.
+    """
+    is_wherobots = os.getenv("WHEROBOTS_ENV") in ["stg", "prod"] or storage_root.startswith("wherobots://")
+    
+    if is_wherobots:
+        full_table_name = f"org_catalog.fgsdb.{table_name}"
+        print(f"\nWriting to Wherobots Havasu Iceberg Table: {full_table_name}")
+        try:
+            # Ensure target database/schema exists
+            sedona.sql("CREATE DATABASE IF NOT EXISTS org_catalog.fgsdb")
+            
+            writer = df.write.format("havasu.iceberg").mode("overwrite")
+            if partition_col:
+                writer = writer.partitionBy(partition_col)
+            writer.saveAsTable(full_table_name)
+            print(f"Successfully saved table: {full_table_name}")
+            return
+        except Exception as e:
+            print(f"WARNING: Table creation/save failed ({e}). Falling back to local file path.")
+            
+    # Fallback to geoparquet file
+    clean_root = storage_root
+    if clean_root.startswith("wherobots://"):
+        clean_root = "file:///tmp/raw"
+        
+    target_path = f"{clean_root}/{table_name}.parquet"
+    print(f"\nWriting to GeoParquet file: {target_path}")
+    writer = df.write.format("geoparquet").mode("overwrite")
+    if partition_col:
+        writer = writer.partitionBy(partition_col)
+    writer.save(target_path)
+    print(f"Successfully saved file: {target_path}")
+
 # ==============================================================================
 # Pipeline Execution Functions
 # ==============================================================================
@@ -148,9 +185,7 @@ def ingest_nsw_infrastructure_poi(sedona, storage_root):
     # Append dynamic year column (using current execution year 2026)
     df_spatial = df_spatial.withColumn("year", lit(2026))
     
-    target_path = f"{storage_root}/nsw_infrastructure_poi.parquet"
-    print(f"\nWriting to: {target_path} partitioned by year")
-    df_spatial.write.format("geoparquet").partitionBy("year").mode("overwrite").save(target_path)
+    save_data_frame(sedona, df_spatial, "nsw_infrastructure_poi", storage_root)
     print("NSW Infrastructure POI Ingestion completed.")
 
 
@@ -187,9 +222,7 @@ def ingest_nsw_train_network(sedona, storage_root):
                               .withColumn("year", lit(2026)) \
                               .drop("geom")
                               
-    lines_path = f"{storage_root}/nsw_train_lines.parquet"
-    print(f"Writing Train Lines to: {lines_path} partitioned by year")
-    lines_spatial.write.format("geoparquet").partitionBy("year").mode("overwrite").save(lines_path)
+    save_data_frame(sedona, lines_spatial, "nsw_train_lines", storage_root)
     
     # 2. Fetch Stations and Station Classes (Layer 0: TransportFacilityPoint - filtered for Railway Stations)
     try:
@@ -241,9 +274,7 @@ def ingest_nsw_train_network(sedona, storage_root):
         .otherwise("Commuter")
     )
     
-    stations_path = f"{storage_root}/nsw_rail_stations.parquet"
-    print(f"Writing Rail Stations to: {stations_path} partitioned by year")
-    stations_spatial.write.format("geoparquet").partitionBy("year").mode("overwrite").save(stations_path)
+    save_data_frame(sedona, stations_spatial, "nsw_rail_stations", storage_root)
     print("TfNSW Train Network Ingestion completed.")
 
 
@@ -432,9 +463,7 @@ def ingest_abs_regional_demographics(sedona, storage_root):
         
     print(f"\nTotal Demographics Spatial Records: {final_df.count()}")
     
-    target_path = f"{storage_root}/abs_demographics.parquet"
-    print(f"\nWriting to: {target_path} partitioned by year")
-    final_df.write.format("geoparquet").partitionBy("year").mode("overwrite").save(target_path)
+    save_data_frame(sedona, final_df, "abs_demographics", storage_root)
     print("ABS Regional Demographics Ingestion completed.")
     
     try:
@@ -517,9 +546,7 @@ def ingest_tfnsw_opal_patronage(sedona, storage_root):
                               
     print(f"Total Patronage spatial records: {opal_spatial.count()}")
     
-    target_path = f"{storage_root}/tfnsw_opal_usage.parquet"
-    print(f"\nWriting to: {target_path} partitioned by year")
-    opal_spatial.write.format("geoparquet").partitionBy("year").mode("overwrite").save(target_path)
+    save_data_frame(sedona, opal_spatial, "tfnsw_opal_usage", storage_root)
     print("TfNSW Opal Patronage Ingestion completed.")
     
     try:
