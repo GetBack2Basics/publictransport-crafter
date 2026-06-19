@@ -343,6 +343,11 @@
                     <label for="notebook-id">Active Notebook ID</label>
                     <input type="text" id="notebook-id" value="9m1storvdykcar" placeholder="e.g. 9m1storvdykcar">
                 </div>
+                <div class="control-group">
+                    <label for="api-key">Wherobots API Key</label>
+                    <input type="password" id="api-key" placeholder="Paste your API key (wbk_...)">
+                    <small style="font-size: 0.65rem; color: var(--text-secondary);">Stored in memory only, never saved to disk.</small>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -416,6 +421,7 @@
                 <button class="tab-btn" onclick="switchTab('demographics-tab')">Demographics (ABS)</button>
                 <button class="tab-btn" onclick="switchTab('chokepoints-tab')">Transit Chokepoints (Opal)</button>
                 <button class="tab-btn" onclick="switchTab('loss-tab')">Service Loss Catchment</button>
+                <button class="tab-btn" onclick="switchTab('sentinel-tab')">Sentinel-2 Split</button>
             </div>
 
             <div class="tab-content active" id="map-tab">
@@ -482,6 +488,14 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Sentinel-2 Split Map Tab -->
+            <div class="tab-content" id="sentinel-tab">
+                <div style="display: flex; height: 100%;">
+                    <div id="sentinel-map-left" style="flex: 1; border-right: 2px solid var(--border-color);"></div>
+                    <div id="sentinel-map-right" style="flex: 1;"></div>
                 </div>
             </div>
         </div>
@@ -602,13 +616,44 @@
             map.fitBounds(boundingBoxLayer.getBounds());
         }
 
-        // Tab Switching
+        // Sentinel-2 Split Map
+        const sentinelLeft = L.map('sentinel-map-left', {zoomControl: false}).setView([-33.92, 151.39], 10);
+        const sentinelRight = L.map('sentinel-map-right', {zoomControl: false}).setView([-33.92, 151.39], 10);
+
+        // Sync the two maps
+        sentinelLeft.on('zoom move', function() { sentinelRight.setView(sentinelLeft.getCenter(), sentinelLeft.getZoom(), {animate: false}); });
+        sentinelRight.on('zoom move', function() { sentinelLeft.setView(sentinelRight.getCenter(), sentinelRight.getZoom(), {animate: false}); });
+
+        // Left tile layer (S2A - June 19, 2026)
+        L.tileLayer(
+            'https://titiler.xyz/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=https%3A%2F%2Fsentinel-cogs.s3.us-west-2.amazonaws.com%2Fsentinel-s2-l2a-cogs%2F56%2FH%2FLH%2F2026%2F6%2FS2A_56HLH_20260619_0_L2A%2FTCI.tif&format=png&tilesize=512&bidx=1&bidx=2&bidx=3',
+            {bounds: [[-34.4210, 150.8240], [-33.4204, 151.9737]], attribution: 'Sentinel-2A (2026-06-19)'}
+        ).addTo(sentinelLeft);
+
+        // Right tile layer (S2C - June 17, 2026)
+        L.tileLayer(
+            'https://titiler.xyz/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=https%3A%2F%2Fsentinel-cogs.s3.us-west-2.amazonaws.com%2Fsentinel-s2-l2a-cogs%2F56%2FH%2FLH%2F2026%2F6%2FS2C_56HLH_20260617_0_L2A%2FTCI.tif&format=png&tilesize=512&bidx=1&bidx=2&bidx=3',
+            {bounds: [[-34.4209, 150.8240], [-33.4204, 151.9627]], attribution: 'Sentinel-2C (2026-06-17)'}
+        ).addTo(sentinelRight);
+
+        // Fit to bounds on first switch to sentinel tab
+        let sentinelInitialized = false;
         function switchTab(tabId) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
             
             event.target.classList.add('active');
             document.getElementById(tabId).classList.add('active');
+            
+            if (tabId === 'sentinel-tab' && !sentinelInitialized) {
+                sentinelInitialized = true;
+                setTimeout(function() {
+                    sentinelLeft.invalidateSize();
+                    sentinelRight.invalidateSize();
+                    sentinelLeft.fitBounds([[-34.4210, 150.8240], [-33.4204, 151.9737]]);
+                    sentinelRight.fitBounds([[-34.4209, 150.8240], [-33.4204, 151.9627]]);
+                }, 100);
+            }
         }
 
         // Debug panel toggle and clear
@@ -641,6 +686,7 @@
             const min_lat = document.getElementById('min-lat').value;
             const max_lat = document.getElementById('max-lat').value;
             const notebook_id = document.getElementById('notebook-id').value.trim();
+            const api_key = document.getElementById('api-key').value.trim();
             
             // Show loaders
             document.getElementById('btn-spinner').style.display = 'block';
@@ -668,7 +714,8 @@
                     max_lon: max_lon,
                     min_lat: min_lat,
                     max_lat: max_lat,
-                    notebook_id: notebook_id
+                    notebook_id: notebook_id,
+                    api_key: api_key
                 })
             })
             .then(res => {
@@ -694,6 +741,7 @@
         // Redeploy Button Click
         document.getElementById('btn-redeploy').addEventListener('click', function() {
             const notebook_id = document.getElementById('notebook-id').value.trim();
+            const api_key = document.getElementById('api-key').value.trim();
             
             // Show loaders
             document.getElementById('btn-redeploy-spinner').style.display = 'block';
@@ -716,7 +764,8 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    notebook_id: notebook_id
+                    notebook_id: notebook_id,
+                    api_key: api_key
                 })
             })
             .then(res => {

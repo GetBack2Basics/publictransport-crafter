@@ -18,6 +18,14 @@ NOTEBOOK_ID = '9m1storvdykcar'  # Default fallback ID
 # In-memory jobs registry
 JOBS = {}
 
+def get_api_key(params=None):
+    """Return user-provided API key from request params, or fall back to default."""
+    if params:
+        user_key = params.get('api_key', '').strip()
+        if user_key:
+            return user_key
+    return API_KEY
+
 SOURCES = {
     "education": "https://portal.spatial.nsw.gov.au/server/rest/services/NSW_FOI_Education_Facilities/FeatureServer/0?f=json",
     "health": "https://portal.spatial.nsw.gov.au/server/rest/services/NSW_FOI_Health_Facilities/FeatureServer/0?f=json",
@@ -186,7 +194,9 @@ def upload_notebook_via_urllib(local_path, remote_path, notebook_id, api_key):
     with urllib.request.urlopen(req) as response:
         return response.getcode() in [200, 201]
 
-def execute_wherobots_code(code, notebook_id, log_callback=None):
+def execute_wherobots_code(code, notebook_id, log_callback=None, api_key=None):
+    if api_key is None:
+        api_key = API_KEY
     def log(msg_text):
         if log_callback:
             log_callback(msg_text)
@@ -196,7 +206,7 @@ def execute_wherobots_code(code, notebook_id, log_callback=None):
     base_url = f"https://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/{notebook_id}"
     ws_base_url = f"wss://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/{notebook_id}"
     local_headers = {
-        'x-api-key': API_KEY,
+        'x-api-key': api_key,
         'Content-Type': 'application/json'
     }
 
@@ -222,7 +232,7 @@ def execute_wherobots_code(code, notebook_id, log_callback=None):
 
     try:
         ws_url = f"{ws_base_url}/api/kernels/{kernel_id}/channels"
-        ws = websocket.create_connection(ws_url, header=[f"x-api-key: {API_KEY}"])
+        ws = websocket.create_connection(ws_url, header=[f"x-api-key: {api_key}"])
 
         session_id = str(uuid.uuid4())
         msg_id = str(uuid.uuid4())
@@ -272,11 +282,13 @@ def execute_wherobots_code(code, notebook_id, log_callback=None):
         
     return "".join(stdout_output)
 
-def download_kepler_map(notebook_id):
+def download_kepler_map(notebook_id, api_key=None):
+    if api_key is None:
+        api_key = API_KEY
     print("Downloading Kepler map html from Wherobots...")
     base_url = f"https://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/{notebook_id}"
     map_url = f"{base_url}/files/raw_data_explorer.html"
-    req = urllib.request.Request(map_url, headers={'x-api-key': API_KEY})
+    req = urllib.request.Request(map_url, headers={'x-api-key': api_key})
     local_path = os.path.join(DIRECTORY, "raw_data_explorer.html")
     
     try:
@@ -303,7 +315,9 @@ def extract_json_from_output(output):
                 print(f"Error decoding JSON string: {e}")
     return None
 
-def run_analysis_thread(job_id, min_lon, min_lat, max_lon, max_lat, notebook_id):
+def run_analysis_thread(job_id, min_lon, min_lat, max_lon, max_lat, notebook_id, api_key=None):
+    if api_key is None:
+        api_key = API_KEY
     job = JOBS[job_id]
     lat_center = (min_lat + max_lat) / 2
     lon_center = (min_lon + max_lon) / 2
@@ -428,14 +442,14 @@ print("RESULT_END")
         job["logs"].append(text)
 
     try:
-        output = execute_wherobots_code(code_template, notebook_id, append_log)
+        output = execute_wherobots_code(code_template, notebook_id, append_log, api_key)
         
         results = extract_json_from_output(output)
         if not results:
             raise Exception("Could not parse query output from Wherobots. Output prefix:\n" + output[:300])
         
         append_log("Downloading updated Kepler map canvas from Wherobots...\n")
-        download_success = download_kepler_map(notebook_id)
+        download_success = download_kepler_map(notebook_id, api_key)
         results["map_downloaded"] = download_success
         
         job["status"] = "completed"
@@ -446,7 +460,9 @@ print("RESULT_END")
         job["error"] = str(e)
         append_log(f"Job failed with error: {e}\n")
 
-def run_redeploy_thread(job_id, notebook_id):
+def run_redeploy_thread(job_id, notebook_id, api_key=None):
+    if api_key is None:
+        api_key = API_KEY
     job = JOBS[job_id]
     
     def log(text):
@@ -470,7 +486,7 @@ def run_redeploy_thread(job_id, notebook_id):
     # 1. Wake Container
     log("Waking Wherobots container...\n")
     url = f"https://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/{notebook_id}"
-    req = urllib.request.Request(url, headers={'x-api-key': API_KEY})
+    req = urllib.request.Request(url, headers={'x-api-key': api_key})
     container_ready = False
     consecutive_502s = 0
 
@@ -676,9 +692,9 @@ print("Kepler map generation from existing tables completed successfully!")
 """
 
     try:
-        execute_wherobots_code(run_code, notebook_id, log)
+        execute_wherobots_code(run_code, notebook_id, log, api_key)
         log("Downloading pre-rendered Kepler map...\n")
-        download_success = download_kepler_map(notebook_id)
+        download_success = download_kepler_map(notebook_id, api_key)
         
         log("Fetching default data for Newcastle area...\n")
         fetch_code = """
@@ -727,7 +743,7 @@ print(json.dumps({
 }))
 print("RESULT_END")
 """
-        fetch_output = execute_wherobots_code(fetch_code, notebook_id, log)
+        fetch_output = execute_wherobots_code(fetch_code, notebook_id, log, api_key)
         
         results = extract_json_from_output(fetch_output)
         if not results:
@@ -781,8 +797,10 @@ class DashboardHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             # Check if the Wherobots notebook instance is reachable
             query_params = urllib.parse.parse_qs(parsed_url.query)
             nb_id = query_params.get('notebook_id', [NOTEBOOK_ID])[0].strip() or NOTEBOOK_ID
+            user_key = query_params.get('api_key', [''])[0].strip()
+            health_key = user_key if user_key else API_KEY
             health_url = f"https://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/{nb_id}"
-            health_req = urllib.request.Request(health_url, headers={'x-api-key': API_KEY})
+            health_req = urllib.request.Request(health_url, headers={'x-api-key': health_key})
             try:
                 with urllib.request.urlopen(health_req, timeout=10) as resp:
                     status = resp.getcode()
@@ -821,6 +839,7 @@ class DashboardHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         notebook_id = params.get('notebook_id', NOTEBOOK_ID).strip()
         if not notebook_id:
             notebook_id = NOTEBOOK_ID
+        api_key = get_api_key(params)
 
         if self.path == '/start_analysis':
             min_lon = float(params.get('min_lon', 151.10))
@@ -838,7 +857,7 @@ class DashboardHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
             thread = threading.Thread(
                 target=run_analysis_thread,
-                args=(job_id, min_lon, min_lat, max_lon, max_lat, notebook_id)
+                args=(job_id, min_lon, min_lat, max_lon, max_lat, notebook_id, api_key)
             )
             thread.daemon = True
             thread.start()
@@ -859,7 +878,7 @@ class DashboardHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
             thread = threading.Thread(
                 target=run_redeploy_thread,
-                args=(job_id, notebook_id)
+                args=(job_id, notebook_id, api_key)
             )
             thread.daemon = True
             thread.start()
