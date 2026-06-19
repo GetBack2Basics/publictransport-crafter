@@ -472,11 +472,12 @@ def run_redeploy_thread(job_id, notebook_id):
     url = f"https://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/{notebook_id}"
     req = urllib.request.Request(url, headers={'x-api-key': API_KEY})
     container_ready = False
-    
-    for i in range(15):
-        log(f"Pinging Wherobots container {notebook_id} (Attempt {i+1}/15)...\n")
+    consecutive_502s = 0
+
+    for i in range(30):
+        log(f"Pinging Wherobots container {notebook_id} (Attempt {i+1}/30)...\n")
         try:
-            with urllib.request.urlopen(req, timeout=12) as response:
+            with urllib.request.urlopen(req, timeout=15) as response:
                 status = response.getcode()
                 if status == 200:
                     log("Container is awake and active!\n")
@@ -484,6 +485,8 @@ def run_redeploy_thread(job_id, notebook_id):
                     break
                 else:
                     log(f"Container status: {status}. Waiting 10s...\n")
+                    if status == 502:
+                        consecutive_502s += 1
         except Exception as e:
             if hasattr(e, 'code'):
                 status = e.code
@@ -491,14 +494,24 @@ def run_redeploy_thread(job_id, notebook_id):
                     log("Container is awake and active!\n")
                     container_ready = True
                     break
+                if status == 502:
+                    consecutive_502s += 1
                 log(f"Attempt {i+1} status: {status}\n")
             else:
                 log(f"Attempt {i+1} error: {e}\n")
+        # After 10 consecutive 502s, the instance is likely permanently dead
+        if consecutive_502s >= 10:
+            log(f"Instance has returned 502 {consecutive_502s} times consecutively. Instance may be permanently terminated.\n")
+            break
         time.sleep(10)
-        
+
     if not container_ready:
         job["status"] = "failed"
-        job["error"] = "Failed to wake Wherobots container (HTTP 502/Gateway Timeout)."
+        job["error"] = (
+            f"Failed to wake Wherobots notebook instance '{notebook_id}'. "
+            "The instance may have been permanently terminated (Community Edition auto-retires after 4 hours of inactivity). "
+            "Please start a new notebook instance at https://cloud.wherobots.com and update the notebook_id in the dashboard."
+        )
         log("Redeployment failed: Container could not be reached.\n")
         return
 
@@ -764,6 +777,40 @@ class DashboardHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "Job not found"}).encode('utf-8'))
+        elif parsed_url.path == '/health':
+            # Check if the Wherobots notebook instance is reachable
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            nb_id = query_params.get('notebook_id', [NOTEBOOK_ID])[0].strip() or NOTEBOOK_ID
+            health_url = f"https://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/{nb_id}"
+            health_req = urllib.request.Request(health_url, headers={'x-api-key': API_KEY})
+            try:
+                with urllib.request.urlopen(health_req, timeout=10) as resp:
+                    status = resp.getcode()
+                    healthy = (status == 200)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "notebook_id": nb_id,
+                        "status": "healthy" if healthy else "degraded",
+                        "http_code": status,
+                        "message": "Instance is alive" if healthy else f"Instance returned HTTP {status}"
+                    }).encode('utf-8'))
+            except Exception as e:
+                code = getattr(e, 'code', 0)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "notebook_id": nb_id,
+                    "status": "unhealthy",
+                    "http_code": code,
+                    "message": (
+                        "Instance is unreachable. It may have been permanently terminated "
+                        "(Community Edition auto-retires after 4 hours). "
+                        "Start a new instance at https://cloud.wherobots.com"
+                    )
+                }).encode('utf-8'))
         else:
             super().do_GET()
 

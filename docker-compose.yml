@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: transport-crafter-app
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8081}:8080"
+    environment:
+      - WHEROBOTS_ENV=${WHEROBOTS_ENV:-dev}
+    volumes:
+      - ./src/Dashboard:/app/src/Dashboard
+    networks:
+      - transport-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: transport-crafter-tunnel
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - ./cloudflared-config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared-creds.json:/etc/cloudflared/creds.json:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - transport-net
+
+networks:
+  transport-net:
+    driver: bridge

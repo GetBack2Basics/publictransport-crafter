@@ -1,0 +1,8 @@
+tunnel: 5b5516c4-b145-468e-be51-5c7a2ca71d42
+credentials-file: /etc/cloudflared/creds.json
+originRequest:
+  noTLSVerify: true
+ingress:
+  - hostname: transportcrafter.getback2basics.net
+    service: http://app:8080
+  - service: http_status:404

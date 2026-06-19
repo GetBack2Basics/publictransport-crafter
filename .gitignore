@@ -5,3 +5,7 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 raw_data_explorer.html
+
+# Secrets
+.env
+cloudflared-creds.json
