@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wherobots Geospatial Transit Dashboard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <!-- Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border-color: #475569;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--bg-secondary);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 380px;
+            background-color: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            gap: 1.5rem;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .sidebar-section h2 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-group label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        select, input {
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.625rem;
+            border-radius: 0.375rem;
+            font-family: inherit;
+            font-size: 0.875rem;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        select:focus, input:focus {
+            border-color: var(--accent-color);
+        }
+
+        .bbox-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+        }
+
+        button.btn-primary {
+            background-color: var(--accent-color);
+            color: #fff;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        button.btn-primary:hover:not(:disabled) {
+            background-color: var(--accent-hover);
+        }
+
+        button.btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        button.btn-secondary {
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            width: 100%;
+        }
+
+        button.btn-secondary:hover:not(:disabled) {
+            background-color: var(--border-color);
+        }
+
+        button.btn-secondary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #map-selector {
+            height: 250px;
+            border-radius: 0.375rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-primary);
+            overflow: hidden;
+        }
+
+        .tabs-header {
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            padding-left: 1rem;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 1rem 1.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            color: var(--accent-color);
+            border-bottom-color: var(--accent-color);
+        }
+
+        .tab-content {
+            flex: 1;
+            overflow: hidden;
+            display: none;
+            position: relative;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background-color: var(--bg-primary);
+        }
+
+        .table-container {
+            padding: 2rem;
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            color: var(--text-primary);
+            text-align: left;
+        }
+
+        th {
+            background-color: var(--bg-secondary);
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border-bottom: 2px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.875rem;
+        }
+
+        tr:hover {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .no-data-msg {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        /* Spinner */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border-left-color: #fff;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(15, 23, 42, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 1rem;
+            z-index: 1000;
+        }
+
+        .overlay-text {
+            font-size: 1.125rem;
+            font-weight: 500;
+        }
+
+        .overlay .spinner {
+            width: 40px;
+            height: 40px;
+            border-width: 4px;
+            border-left-color: var(--accent-color);
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Wherobots Geospatial Transit Dashboard</h1>
+        <div class="status-badge" id="cluster-status">Wherobots Connected</div>
+    </header>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <h2>Wherobots Configuration</h2>
+                <div class="control-group">
+                    <label for="notebook-id">Active Notebook ID</label>
+                    <input type="text" id="notebook-id" value="9m1storvdykcar" placeholder="e.g. 9m1storvdykcar">
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h2>Region Selection</h2>
+                <div class="control-group">
+                    <label for="region-preset">Area Preset</label>
+                    <select id="region-preset">
+                        <option value="newcastle">Newcastle / Lake Macquarie</option>
+                        <option value="hunter">Hunter Valley</option>
+                        <option value="sydney">Greater Sydney</option>
+                        <option value="custom">Custom Bounds (Draw on Map)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h2>Bounding Box Coordinates</h2>
+                <div class="bbox-grid">
+                    <div class="control-group">
+                        <label for="min-lon">Min Longitude</label>
+                        <input type="number" id="min-lon" step="0.0001" value="151.10">
+                    </div>
+                    <div class="control-group">
+                        <label for="max-lon">Max Longitude</label>
+                        <input type="number" id="max-lon" step="0.0001" value="151.85">
+                    </div>
+                    <div class="control-group">
+                        <label for="min-lat">Min Latitude</label>
+                        <input type="number" id="min-lat" step="0.0001" value="-33.15">
+                    </div>
+                    <div class="control-group">
+                        <label for="max-lat">Max Latitude</label>
+                        <input type="number" id="max-lat" step="0.0001" value="-32.70">
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h2>Interactive Map Bounds</h2>
+                <div id="map-selector"></div>
+            </div>
+
+            <button class="btn-primary" id="btn-run-model">
+                <span class="spinner" id="btn-spinner"></span>
+                <span id="btn-text">Execute Wherobots SQL Model</span>
+            </button>
+
+            <button class="btn-secondary" id="btn-redeploy">
+                <span class="spinner" id="btn-redeploy-spinner" style="display: none;"></span>
+                <span id="btn-redeploy-text">Redeploy & Sync Code</span>
+            </button>
+
+            <div class="sidebar-section" id="execution-logs-section" style="display: none; flex-direction: column; gap: 0.5rem;">
+                <h2>Execution Console</h2>
+                <div id="execution-logs-console" style="background-color: #020617; border: 1px solid var(--border-color); font-family: monospace; font-size: 0.75rem; padding: 0.75rem; border-radius: 0.375rem; height: 180px; overflow-y: auto; white-space: pre-wrap; color: #38bdf8; line-height: 1.3;"></div>
+            </div>
+        </div>
+
+        <div class="content-area">
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('map-tab')">Kepler.gl Map</button>
+                <button class="tab-btn" onclick="switchTab('demographics-tab')">Demographics (ABS)</button>
+                <button class="tab-btn" onclick="switchTab('chokepoints-tab')">Transit Chokepoints (Opal)</button>
+                <button class="tab-btn" onclick="switchTab('loss-tab')">Service Loss Catchment</button>
+            </div>
+
+            <div class="tab-content active" id="map-tab">
+                <div class="overlay" id="map-overlay">
+                    <div class="spinner"></div>
+                    <div class="overlay-text" id="overlay-msg">Running PySpark SQL Queries on Wherobots Cloud...</div>
+                </div>
+                <iframe id="map-frame" src="raw_data_explorer.html"></iframe>
+            </div>
+
+            <div class="tab-content" id="demographics-tab">
+                <div class="table-container">
+                    <table id="demo-table">
+                        <thead>
+                            <tr>
+                                <th>SA2 Code</th>
+                                <th>SA2 Suburb Name</th>
+                                <th>Estimated Population</th>
+                                <th>Population Density (sq km)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="4" class="no-data-msg">No data queried yet. Select bounds and click "Execute Wherobots SQL Model".</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-content" id="chokepoints-tab">
+                <div class="table-container">
+                    <table id="choke-table">
+                        <thead>
+                            <tr>
+                                <th>Stop Name / ID</th>
+                                <th>Travel Mode</th>
+                                <th>Trips Volume (2025)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="3" class="no-data-msg">No data queried yet. Select bounds and click "Execute Wherobots SQL Model".</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-content" id="loss-tab">
+                <div class="table-container">
+                    <table id="loss-table">
+                        <thead>
+                            <tr>
+                                <th>Stop Name</th>
+                                <th>Travel Mode</th>
+                                <th>Total Trips affected</th>
+                                <th>Catchment Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="4" class="no-data-msg">No data queried yet. Select bounds and click "Execute Wherobots SQL Model".</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <!-- Leaflet Draw JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <script>
+        // Initialize Map
+        const map = L.map('map-selector').setView([-32.9283, 151.7817], 9);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        }).addTo(map);
+
+        // Predefined BBoxes
+        const presets = {
+            newcastle: { min_lon: 151.10, min_lat: -33.15, max_lon: 151.85, max_lat: -32.70 },
+            hunter: { min_lon: 150.80, min_lat: -32.90, max_lon: 151.50, max_lat: -32.20 },
+            sydney: { min_lon: 150.50, min_lat: -34.10, max_lon: 151.40, max_lat: -33.50 }
+        };
+
+        // Draw Box Layer
+        let boundingBoxLayer = L.rectangle([[-33.15, 151.10], [-32.70, 151.85]], {
+            color: "#3b82f6",
+            weight: 2,
+            fillColor: "#3b82f6",
+            fillOpacity: 0.15
+        }).addTo(map);
+
+        // Map Fit bounds
+        map.fitBounds(boundingBoxLayer.getBounds());
+
+        // Draw controls initialization
+        const drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+        const drawControl = new L.Control.Draw({
+            draw: {
+                polyline: false,
+                polygon: false,
+                circle: false,
+                marker: false,
+                circlemarker: false,
+                rectangle: {
+                    shapeOptions: {
+                        color: '#3b82f6',
+                        weight: 2
+                    }
+                }
+            },
+            edit: false
+        });
+        map.addControl(drawControl);
+
+        // Draw event handlers
+        map.on(L.Draw.Event.CREATED, function (e) {
+            const layer = e.layer;
+            const bounds = layer.getBounds();
+            
+            // Remove previous rectangle
+            if (boundingBoxLayer) {
+                map.removeLayer(boundingBoxLayer);
+            }
+            
+            boundingBoxLayer = layer;
+            boundingBoxLayer.addTo(map);
+            
+            // Update input values
+            document.getElementById('min-lon').value = bounds.getWest().toFixed(4);
+            document.getElementById('max-lon').value = bounds.getEast().toFixed(4);
+            document.getElementById('min-lat').value = bounds.getSouth().toFixed(4);
+            document.getElementById('max-lat').value = bounds.getNorth().toFixed(4);
+            
+            document.getElementById('region-preset').value = 'custom';
+        });
+
+        // Preset Listener
+        document.getElementById('region-preset').addEventListener('change', function(e) {
+            const presetVal = e.target.value;
+            if (presetVal === 'custom') return;
+            
+            const bbox = presets[presetVal];
+            document.getElementById('min-lon').value = bbox.min_lon;
+            document.getElementById('max-lon').value = bbox.max_lon;
+            document.getElementById('min-lat').value = bbox.min_lat;
+            document.getElementById('max-lat').value = bbox.max_lat;
+            
+            updateMapRectangle();
+        });
+
+        // Coordination Input listeners
+        ['min-lon', 'max-lon', 'min-lat', 'max-lat'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                document.getElementById('region-preset').value = 'custom';
+                updateMapRectangle();
+            });
+        });
+
+        function updateMapRectangle() {
+            const min_lon = parseFloat(document.getElementById('min-lon').value);
+            const max_lon = parseFloat(document.getElementById('max-lon').value);
+            const min_lat = parseFloat(document.getElementById('min-lat').value);
+            const max_lat = parseFloat(document.getElementById('max-lat').value);
+            
+            if (boundingBoxLayer) {
+                map.removeLayer(boundingBoxLayer);
+            }
+            
+            boundingBoxLayer = L.rectangle([[min_lat, min_lon], [max_lat, max_lon]], {
+                color: "#3b82f6",
+                weight: 2,
+                fillColor: "#3b82f6",
+                fillOpacity: 0.15
+            }).addTo(map);
+            
+            map.fitBounds(boundingBoxLayer.getBounds());
+        }
+
+        // Tab Switching
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // Run Model Button Click
+        document.getElementById('btn-run-model').addEventListener('click', function() {
+            const min_lon = document.getElementById('min-lon').value;
+            const max_lon = document.getElementById('max-lon').value;
+            const min_lat = document.getElementById('min-lat').value;
+            const max_lat = document.getElementById('max-lat').value;
+            const notebook_id = document.getElementById('notebook-id').value.trim();
+            
+            // Show loaders
+            document.getElementById('btn-spinner').style.display = 'block';
+            document.getElementById('btn-text').innerText = 'Initializing Job...';
+            document.getElementById('btn-run-model').disabled = true;
+            document.getElementById('btn-redeploy').disabled = true;
+            document.getElementById('map-overlay').style.display = 'flex';
+            document.getElementById('overlay-msg').innerText = 'Starting Remote Job on Wherobots Cloud...';
+            
+            // Show console
+            const consoleSection = document.getElementById('execution-logs-section');
+            const consoleDiv = document.getElementById('execution-logs-console');
+            consoleSection.style.display = 'flex';
+            consoleDiv.innerHTML = 'Submitting job request to server...\n';
+            
+            fetch('/start_analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    min_lon: min_lon,
+                    max_lon: max_lon,
+                    min_lat: min_lat,
+                    max_lat: max_lat,
+                    notebook_id: notebook_id
+                })
+            })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('Server returned ' + res.status + ' status code');
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                const jobId = data.job_id;
+                consoleDiv.innerHTML += `Job started with ID: ${jobId}\n`;
+                pollJobStatus(jobId);
+            })
+            .catch(err => {
+                alert('Request failed: ' + err.message);
+                resetRunButton();
+            });
+        });
+
+        // Redeploy Button Click
+        document.getElementById('btn-redeploy').addEventListener('click', function() {
+            const notebook_id = document.getElementById('notebook-id').value.trim();
+            
+            // Show loaders
+            document.getElementById('btn-redeploy-spinner').style.display = 'block';
+            document.getElementById('btn-redeploy-text').innerText = 'Redeploying...';
+            document.getElementById('btn-run-model').disabled = true;
+            document.getElementById('btn-redeploy').disabled = true;
+            document.getElementById('map-overlay').style.display = 'flex';
+            document.getElementById('overlay-msg').innerText = 'Waking Wherobots Container...';
+            
+            // Show console
+            const consoleSection = document.getElementById('execution-logs-section');
+            const consoleDiv = document.getElementById('execution-logs-console');
+            consoleSection.style.display = 'flex';
+            consoleDiv.innerHTML = 'Starting Wherobots container wake-up & pipeline redeployment...\n';
+            
+            fetch('/redeploy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    notebook_id: notebook_id
+                })
+            })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('Server returned ' + res.status + ' status code');
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                const jobId = data.job_id;
+                consoleDiv.innerHTML += `Redeployment task started with ID: ${jobId}\n`;
+                pollJobStatus(jobId);
+            })
+            .catch(err => {
+                alert('Redeployment request failed: ' + err.message);
+                resetRunButton();
+            });
+        });
+
+        function resetRunButton() {
+            document.getElementById('btn-spinner').style.display = 'none';
+            document.getElementById('btn-text').innerText = 'Execute Wherobots SQL Model';
+            document.getElementById('btn-redeploy-spinner').style.display = 'none';
+            document.getElementById('btn-redeploy-text').innerText = 'Redeploy & Sync Code';
+            document.getElementById('btn-run-model').disabled = false;
+            document.getElementById('btn-redeploy').disabled = false;
+            document.getElementById('map-overlay').style.display = 'none';
+        }
+
+        function pollJobStatus(jobId) {
+            const consoleDiv = document.getElementById('execution-logs-console');
+            let lastLogIndex = 0;
+            
+            const interval = setInterval(() => {
+                fetch('/job_status?id=' + jobId)
+                .then(res => res.json())
+                .then(job => {
+                    if (job.error) {
+                        clearInterval(interval);
+                        consoleDiv.innerHTML += `\nError: ${job.error}\n`;
+                        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+                        resetRunButton();
+                        return;
+                    }
+                    // Update logs in console
+                    if (job.logs && job.logs.length > lastLogIndex) {
+                        for (let i = lastLogIndex; i < job.logs.length; i++) {
+                            consoleDiv.innerHTML += job.logs[i];
+                        }
+                        lastLogIndex = job.logs.length;
+                        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+                    }
+                    
+                    if (job.status === 'completed') {
+                        clearInterval(interval);
+                        consoleDiv.innerHTML += '\nMap and data loaded successfully!\n';
+                        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+                        
+                        populateTables(job.results);
+                        
+                        // Reload map iframe
+                        document.getElementById('map-frame').src = 'raw_data_explorer.html?t=' + new Date().getTime();
+                        resetRunButton();
+                    } else if (job.status === 'failed') {
+                        clearInterval(interval);
+                        alert('Job failed: ' + (job.error || 'Unknown error'));
+                        consoleDiv.innerHTML += `\nFailed: ${job.error}\n`;
+                        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+                        resetRunButton();
+                    } else {
+                        // Keep updating status message on overlay
+                        document.getElementById('overlay-msg').innerText = 'Processing remote job on Wherobots...\n' + 
+                            (job.logs.length > 0 ? job.logs[job.logs.length - 1].trim() : 'Initializing...');
+                    }
+                })
+                .catch(err => {
+                    console.error('Error polling status:', err);
+                    clearInterval(interval);
+                    consoleDiv.innerHTML += `\nConnection error while polling job status.\n`;
+                    consoleDiv.scrollTop = consoleDiv.scrollHeight;
+                    resetRunButton();
+                });
+            }, 1500);
+        }
+
+        function populateTables(data) {
+            // Demographics Table
+            const demoBody = document.querySelector('#demo-table tbody');
+            demoBody.innerHTML = '';
+            if (data.demographics && data.demographics.length > 0) {
+                data.demographics.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${row.sa2_code}</td>
+                        <td>${row.sa2_name}</td>
+                        <td>${row.pop_estimate.toLocaleString()}</td>
+                        <td>${row.pop_density}</td>
+                    `;
+                    demoBody.appendChild(tr);
+                });
+            } else {
+                demoBody.innerHTML = `<tr><td colspan="4" class="no-data-msg">No demographic rows found in bounds.</td></tr>`;
+            }
+
+            // Chokepoints Table
+            const chokeBody = document.querySelector('#choke-table tbody');
+            chokeBody.innerHTML = '';
+            if (data.chokepoints && data.chokepoints.length > 0) {
+                data.chokepoints.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${row.stop_name}</td>
+                        <td>${row.travel_mode}</td>
+                        <td>${row.total_trips.toLocaleString()}</td>
+                    `;
+                    chokeBody.appendChild(tr);
+                });
+            } else {
+                chokeBody.innerHTML = `<tr><td colspan="3" class="no-data-msg">No transit chokepoints found in bounds.</td></tr>`;
+            }
+
+            // Service Loss Catchment
+            const lossBody = document.querySelector('#loss-table tbody');
+            lossBody.innerHTML = '';
+            if (data.loss_catchment && data.loss_catchment.length > 0) {
+                data.loss_catchment.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${row.stop_name}</td>
+                        <td>${row.travel_mode}</td>
+                        <td>${row.total_trips.toLocaleString()}</td>
+                        <td style="color: var(--danger-color)">Unserved (&gt; 2km from major road network)</td>
+                    `;
+                    lossBody.appendChild(tr);
+                });
+            } else {
+                lossBody.innerHTML = `<tr><td colspan="4" class="no-data-msg">No unserved station catchments identified. All stops have major road segments within 2km buffer.</td></tr>`;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "notebook_mtime": 1781490359.715726,
+  "script_mtime": 1781608248.821689,
+  "sources_meta": {
+    "education": {
+      "etag": "\"d3adbd2b\"",
+      "content_length": "0",
+      "last_modified": null
+    },
+    "health": {
+      "etag": "\"3da36a7a\"",
+      "content_length": "0",
+      "last_modified": null
+    },
+    "transport": {
+      "etag": "\"9fb265ef\"",
+      "content_length": "0",
+      "last_modified": null
+    },
+    "opal": {
+      "etag": "\"1778839510.053-260719-2298090230\"",
+      "content_length": "260719",
+      "last_modified": "Fri, 15 May 2026 10:05:10 GMT"
+    },
+    "abs": {
+      "etag": "\"1781657787\"",
+      "content_length": "89516",
+      "last_modified": "Wed, 17 Jun 2026 00:56:27 GMT"
+    }
+  },
+  "last_ingestion_timestamp": "2026-06-18T23:19:59Z"
+}

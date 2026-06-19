@@ -65,6 +65,11 @@ All pipeline datasets are processed into clean, structured PySpark DataFrames, r
 ### Prerequisites
 - Wherobots Cloud Runtime (Tiny or larger)
 - Apache Sedona / PySpark context
+- Python 3.x
+- `websocket-client` library (for the dashboard websocket connection):
+  ```bash
+  pip install websocket-client
+  ```
 
 ### Running the Python Pipeline
 Set the `WHEROBOTS_ENV` environment variable to load the correct storage destination profile (`dev`, `stg`, or `prod`), then run the ingestion script:
@@ -76,6 +81,31 @@ python3 src/Ingestion/wherobots_ingestion_pipeline.py
 
 ### Running the Interactive Notebook
 Open `notebooks/wherobots_ingestion_pipeline.ipynb` inside your Wherobots Jupyter Lab workspace to run cells interactively. The script includes graceful fallback logic to mock datasets if external portals are unreachable during local development.
+
+### Running the Local/Server Dashboard
+The project includes a web-based geospatial dashboard that queries Wherobots to visualize demographics, transit chokepoints, and service loss catchment areas.
+
+To start the dashboard server:
+```bash
+python3 src/Dashboard/dashboard_server.py
+```
+By default, the server runs on http://localhost:8080.
+
+> [!NOTE]
+> **Container Wake-up & Startup Delays**
+> The dashboard operates by submitting queries and code directly to your remote Wherobots notebook container.
+> - If the container is sleeping, the first action (**Redeploy & Sync Code** or **Execute Wherobots SQL Model**) triggers a container wake-up sequence.
+> - Waking up the remote container can take **1 to 3 minutes**. During this time, the dashboard will continually ping the notebook server. Logs of this process are printed to the **Execution Console** in the sidebar. Once active, subsequent query runs will execute immediately.
+
+### Deploying to a Server
+When cloning this repository to a remote server for production hosting:
+1. Ensure the Python environment has the `websocket-client` package installed.
+2. If necessary, configure a firewall rule to expose port `8080` (or edit the `PORT` variable in `src/Dashboard/dashboard_server.py` to use a custom port).
+3. Run the dashboard server persistently in the background:
+   ```bash
+   nohup python3 src/Dashboard/dashboard_server.py > dashboard.log 2>&1 &
+   ```
+
 
 ---
 
