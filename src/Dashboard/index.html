@@ -404,7 +404,10 @@
             <div class="sidebar-section" id="debug-section" style="display: none; flex-direction: column; gap: 0.5rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <h2 style="margin: 0;">Debug Console</h2>
-                    <button id="btn-clear-debug" style="background: none; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.7rem; cursor: pointer;">Clear</button>
+                    <div style="display: flex; gap: 0.25rem;">
+                        <button id="btn-copy-debug" style="background: none; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.7rem; cursor: pointer;" title="Copy all logs to clipboard">📋 Copy</button>
+                        <button id="btn-clear-debug" style="background: none; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.7rem; cursor: pointer;">Clear</button>
+                    </div>
                 </div>
                 <div id="debug-console" style="background-color: #020617; border: 1px solid var(--border-color); font-family: monospace; font-size: 0.72rem; padding: 0.75rem; border-radius: 0.375rem; height: 250px; overflow-y: auto; white-space: pre-wrap; color: #38bdf8; line-height: 1.4;"></div>
             </div>
@@ -673,9 +676,38 @@
             document.getElementById('debug-console').innerHTML = '';
         });
 
-        function logToDebug(msg) {
+        document.getElementById('btn-copy-debug').addEventListener('click', function() {
+            const text = document.getElementById('debug-console').innerText;
+            navigator.clipboard.writeText(text).then(function() {
+                const btn = document.getElementById('btn-copy-debug');
+                btn.textContent = '✅ Copied!';
+                setTimeout(function() { btn.textContent = '📋 Copy'; }, 2000);
+            }).catch(function() {
+                // Fallback for older browsers
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                const btn = document.getElementById('btn-copy-debug');
+                btn.textContent = '✅ Copied!';
+                setTimeout(function() { btn.textContent = '📋 Copy'; }, 2000);
+            });
+        });
+
+        function logToDebug(msg, isError) {
             const consoleDiv = document.getElementById('debug-console');
-            consoleDiv.innerHTML += msg;
+            if (isError) {
+                const span = document.createElement('span');
+                span.style.color = '#ef4444';
+                span.textContent = msg;
+                consoleDiv.appendChild(span);
+            } else {
+                consoleDiv.innerHTML += msg;
+            }
             consoleDiv.scrollTop = consoleDiv.scrollHeight;
         }
 
@@ -733,7 +765,7 @@
                 pollJobStatus(jobId);
             })
             .catch(err => {
-                logToDebug(`\n[ERROR] Request failed: ${err.message}\n`);
+                logToDebug(`\n[ERROR] Request failed: ${err.message}\n`, true);
                 resetRunButton();
             });
         });
@@ -756,7 +788,9 @@
             document.getElementById('btn-toggle-debug').textContent = '🐛 Hide Debug Console';
             document.getElementById('debug-console').innerHTML = '';
             logToDebug(`[${new Date().toLocaleTimeString()}] Starting redeployment...\n`);
-            logToDebug(`  Notebook: ${notebook_id}\n\n`);
+            logToDebug(`  Notebook: ${notebook_id}\n`);
+            logToDebug(`  API Key: ${api_key ? api_key.substring(0, 8) + '...' : '(using default)'}\n`);
+            logToDebug(`  Instance URL: https://aws-us-west-2.compute.cloud.wherobots.com/jupyter/ltq5l3obgb/${notebook_id}\n\n`);
             
             fetch('/redeploy', {
                 method: 'POST',
@@ -783,7 +817,7 @@
                 pollJobStatus(jobId);
             })
             .catch(err => {
-                logToDebug(`\n[ERROR] Redeployment request failed: ${err.message}\n`);
+                logToDebug(`\n[ERROR] Redeployment request failed: ${err.message}\n`, true);
                 resetRunButton();
             });
         });
@@ -835,7 +869,7 @@
                         clearInterval(interval);
                         logToDebug(`\n[${new Date().toLocaleTimeString()}] Job FAILED.\n`);
                         if (job.error) {
-                            logToDebug(`[ERROR] ${job.error}\n`);
+                            logToDebug(`[ERROR] ${job.error}\n`, true);
                         }
                         resetRunButton();
                     } else {
@@ -847,7 +881,7 @@
                 .catch(err => {
                     console.error('Error polling status:', err);
                     clearInterval(interval);
-                    logToDebug(`\n[ERROR] Connection lost while polling job status: ${err.message}\n`);
+                    logToDebug(`\n[ERROR] Connection lost while polling job status: ${err.message}\n`, true);
                     resetRunButton();
                 });
             }, 1500);
