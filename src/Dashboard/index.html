@@ -340,13 +340,22 @@
             <div class="sidebar-section">
                 <h2>Wherobots Configuration</h2>
                 <div class="control-group">
-                    <label for="notebook-id">Active Notebook ID</label>
-                    <input type="text" id="notebook-id" value="9m1storvdykcar" placeholder="e.g. 9m1storvdykcar">
-                </div>
-                <div class="control-group">
                     <label for="api-key">Wherobots API Key</label>
                     <input type="password" id="api-key" placeholder="Paste your API key (wbk_...)">
-                    <small style="font-size: 0.65rem; color: var(--text-secondary);">Stored in memory only, never saved to disk.</small>
+                    <div id="api-key-status" style="font-size: 0.65rem; margin-top: 0.25rem; min-height: 1em;"></div>
+                </div>
+                <div class="control-group">
+                    <label for="notebook-id">Active Notebook ID</label>
+                    <input type="text" id="notebook-id" value="" placeholder="e.g. 9m1storvdykcar">
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                        <button class="btn-secondary" id="btn-create-instance" style="flex: 1; font-size: 0.75rem; padding: 0.5rem;">
+                            ➕ Create New Instance
+                        </button>
+                        <button class="btn-secondary" id="btn-check-instance" style="flex: 1; font-size: 0.75rem; padding: 0.5rem;">
+                            🔍 Check Instance
+                        </button>
+                    </div>
+                    <div id="instance-status" style="font-size: 0.65rem; margin-top: 0.25rem; min-height: 1em;"></div>
                 </div>
             </div>
 
@@ -710,6 +719,91 @@
             }
             consoleDiv.scrollTop = consoleDiv.scrollHeight;
         }
+
+        // --- API Key validation ---
+        let apiKeyValidated = false;
+        document.getElementById('api-key').addEventListener('blur', function() {
+            const key = this.value.trim();
+            const statusDiv = document.getElementById('api-key-status');
+            if (!key) {
+                statusDiv.textContent = '';
+                statusDiv.style.color = '';
+                apiKeyValidated = false;
+                return;
+            }
+            statusDiv.textContent = '⏳ Validating...';
+            statusDiv.style.color = 'var(--text-secondary)';
+            fetch('/health?api_key=' + encodeURIComponent(key))
+                .then(res => res.json())
+                .then(data => {
+                    if (data.http_code === 200) {
+                        statusDiv.textContent = '✅ API key valid';
+                        statusDiv.style.color = 'var(--success-color)';
+                        apiKeyValidated = true;
+                    } else {
+                        statusDiv.textContent = '⚠️ Key returned HTTP ' + data.http_code + ' — may still work for notebook operations';
+                        statusDiv.style.color = '#f59e0b';
+                        apiKeyValidated = true;
+                    }
+                })
+                .catch(err => {
+                    statusDiv.textContent = '❌ Could not validate: ' + err.message;
+                    statusDiv.style.color = 'var(--danger-color)';
+                    apiKeyValidated = false;
+                });
+        });
+
+        // --- Create New Instance button ---
+        document.getElementById('btn-create-instance').addEventListener('click', function() {
+            window.open('https://cloud.wherobots.com', '_blank');
+            logToDebug(`[${new Date().toLocaleTimeString()}] Opened cloud.wherobots.com in new tab.\n`);
+            logToDebug(`  After creating a new notebook instance, copy the notebook ID from the URL.\n`);
+            logToDebug(`  The URL looks like: .../jupyter/ltq5l3obgb/<NOTEBOOK_ID>\n\n`);
+        });
+
+        // --- Check Instance button ---
+        document.getElementById('btn-check-instance').addEventListener('click', function() {
+            const notebook_id = document.getElementById('notebook-id').value.trim();
+            const api_key = document.getElementById('api-key').value.trim();
+            const statusDiv = document.getElementById('instance-status');
+            if (!notebook_id) {
+                statusDiv.textContent = '❌ Enter a notebook ID first';
+                statusDiv.style.color = 'var(--danger-color)';
+                return;
+            }
+            statusDiv.textContent = '⏳ Checking...';
+            statusDiv.style.color = 'var(--text-secondary)';
+            let url = '/health?notebook_id=' + encodeURIComponent(notebook_id);
+            if (api_key) url += '&api_key=' + encodeURIComponent(api_key);
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'healthy') {
+                        statusDiv.textContent = '✅ Instance is alive and reachable';
+                        statusDiv.style.color = 'var(--success-color)';
+                    } else if (data.http_code === 502) {
+                        statusDiv.textContent = '❌ Instance returned 502 — likely terminated. Create a new one.';
+                        statusDiv.style.color = 'var(--danger-color)';
+                    } else {
+                        statusDiv.textContent = '⚠️ HTTP ' + data.http_code + ' — ' + (data.message || '');
+                        statusDiv.style.color = '#f59e0b';
+                    }
+                })
+                .catch(err => {
+                    statusDiv.textContent = '❌ Check failed: ' + err.message;
+                    statusDiv.style.color = 'var(--danger-color)';
+                });
+        });
+
+        // --- Auto-detect notebook ID from URL query param ---
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const nbFromUrl = params.get('nb');
+            if (nbFromUrl) {
+                document.getElementById('notebook-id').value = nbFromUrl;
+                logToDebug(`[${new Date().toLocaleTimeString()}] Auto-detected notebook ID from URL: ${nbFromUrl}\n\n`);
+            }
+        })();
 
         // Run Model Button Click
         document.getElementById('btn-run-model').addEventListener('click', function() {

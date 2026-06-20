@@ -552,9 +552,9 @@ def run_redeploy_thread(job_id, notebook_id, api_key=None):
         log(f"Syncing {os.path.basename(local_p)} to remote {remote_p}...\n")
         try:
             if is_nb:
-                success = upload_notebook_via_urllib(local_p, remote_p, notebook_id, API_KEY)
+                success = upload_notebook_via_urllib(local_p, remote_p, notebook_id, api_key)
             else:
-                success = upload_file_via_urllib(local_p, remote_p, notebook_id, API_KEY)
+                success = upload_file_via_urllib(local_p, remote_p, notebook_id, api_key)
             if success:
                 log(f"Synced {remote_p} successfully.\n")
             else:
