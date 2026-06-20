@@ -345,8 +345,12 @@
                     <div id="api-key-status" style="font-size: 0.65rem; margin-top: 0.25rem; min-height: 1em;"></div>
                 </div>
                 <div class="control-group">
-                    <label for="notebook-id">Active Notebook ID</label>
-                    <input type="text" id="notebook-id" value="" placeholder="e.g. 9m1storvdykcar">
+                    <label for="notebook-id">Active Notebook ID or URL</label>
+                    <input type="text" id="notebook-id" value="" placeholder="Paste notebook ID or full cloud.wherobots.com URL">
+                    <div style="font-size: 0.65rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                        Paste the full URL from cloud.wherobots.com — the ID will be extracted automatically.
+                        <br>The ID is the last part of the URL after <code>/jupyter/ltq5l3obgb/</code>
+                    </div>
                     <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
                         <button class="btn-secondary" id="btn-create-instance" style="flex: 1; font-size: 0.75rem; padding: 0.5rem;">
                             ➕ Create New Instance
@@ -775,13 +779,53 @@
         document.getElementById('btn-create-instance').addEventListener('click', function() {
             window.open('https://cloud.wherobots.com', '_blank');
             logToDebug(`[${new Date().toLocaleTimeString()}] Opened cloud.wherobots.com in new tab.\n`);
-            logToDebug(`  After creating a new notebook instance, copy the notebook ID from the URL.\n`);
-            logToDebug(`  The URL looks like: .../jupyter/ltq5l3obgb/<NOTEBOOK_ID>\n\n`);
+            logToDebug(`  After creating a new notebook, paste the full URL or just the notebook ID above.\n`);
+            logToDebug(`  URL format: https://cloud.wherobots.com/workspace/.../jupyter/ltq5l3obgb/<NOTEBOOK_ID>\n\n`);
+        });
+
+        // --- Extract notebook ID from URL ---
+        function extractNotebookId(input) {
+            const val = input.trim();
+            if (!val) return val;
+            // If it looks like a plain ID (no slashes, no http), return as-is
+            if (!val.includes('/') && !val.includes('.')) return val;
+            // Try to extract from URL
+            // Matches: .../jupyter/ltq5l3obgb/<ID> or .../workspace/.../<ID>
+            const patterns = [
+                /jupyter\/ltq5l3obgb\/([^/?&#\s]+)/,
+                /workspace\/(?:[^/]+\/)*([^/?&#\s]+)\/?$/,
+            ];
+            for (const pattern of patterns) {
+                const match = val.match(pattern);
+                if (match && match[1]) return match[1];
+            }
+            // Fallback: take the last path segment
+            try {
+                const url = new URL(val.startsWith('http') ? val : 'https://' + val);
+                const parts = url.pathname.split('/').filter(Boolean);
+                if (parts.length > 0) {
+                    const last = parts[parts.length - 1];
+                    if (last && last !== 'jupyter' && last !== 'ltq5l3obgb') return last;
+                }
+            } catch (e) {}
+            return val;
+        }
+
+        // Auto-extract on paste/change
+        document.getElementById('notebook-id').addEventListener('change', function() {
+            const original = this.value.trim();
+            if (!original) return;
+            const extracted = extractNotebookId(original);
+            if (extracted !== original) {
+                this.value = extracted;
+                logToDebug(`[${new Date().toLocaleTimeString()}] Extracted notebook ID: ${extracted}\n\n`);
+            }
         });
 
         // --- Check Instance button ---
         document.getElementById('btn-check-instance').addEventListener('click', function() {
-            const notebook_id = document.getElementById('notebook-id').value.trim();
+            let notebook_id = document.getElementById('notebook-id').value.trim();
+            notebook_id = extractNotebookId(notebook_id);
             const api_key = document.getElementById('api-key').value.trim();
             const statusDiv = document.getElementById('instance-status');
             if (!notebook_id) {
@@ -829,7 +873,8 @@
             const max_lon = document.getElementById('max-lon').value;
             const min_lat = document.getElementById('min-lat').value;
             const max_lat = document.getElementById('max-lat').value;
-            const notebook_id = document.getElementById('notebook-id').value.trim();
+            let notebook_id = document.getElementById('notebook-id').value.trim();
+            notebook_id = extractNotebookId(notebook_id);
             const api_key = document.getElementById('api-key').value.trim();
             
             // Show loaders
@@ -884,7 +929,8 @@
 
         // Redeploy Button Click
         document.getElementById('btn-redeploy').addEventListener('click', function() {
-            const notebook_id = document.getElementById('notebook-id').value.trim();
+            let notebook_id = document.getElementById('notebook-id').value.trim();
+            notebook_id = extractNotebookId(notebook_id);
             const api_key = document.getElementById('api-key').value.trim();
             
             // Show loaders
