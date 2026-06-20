@@ -359,6 +359,24 @@
                 </div>
             </div>
 
+            <!-- Collapsible Launch Config Guide -->
+            <div class="sidebar-section">
+                <h2 style="cursor: pointer;" onclick="document.getElementById('launch-config-body').style.display=document.getElementById('launch-config-body').style.display==='none'?'flex':'none'">
+                    📋 Launch Configuration <span style="font-size: 0.7rem; color: var(--text-secondary);">(click to expand)</span>
+                </h2>
+                <div id="launch-config-body" style="display: none; flex-direction: column; gap: 0.5rem; font-size: 0.7rem; color: var(--text-secondary);">
+                    <p style="margin: 0 0 0.5rem 0;">When creating a new notebook at cloud.wherobots.com, use these settings:</p>
+                    <div style="background: var(--bg-primary); padding: 0.5rem; border-radius: 0.25rem; border: 1px solid var(--border-color);">
+                        <div><strong>Version:</strong> latest</div>
+                        <div><strong>Region:</strong> US West (Oregon) — closest to data</div>
+                        <div><strong>Idle Timeout:</strong> 120 min (max)</div>
+                        <div><strong>Runtime:</strong> Small or larger (needs 4+ cores for Sedona)</div>
+                    </div>
+                    <p style="margin: 0.5rem 0 0 0;">Dependencies are auto-installed on first run. No manual pip install needed.</p>
+                    <p style="margin: 0;">After creating, copy the notebook ID from the URL and paste it above.</p>
+                </div>
+            </div>
+
             <div class="sidebar-section">
                 <h2>Region Selection</h2>
                 <div class="control-group">

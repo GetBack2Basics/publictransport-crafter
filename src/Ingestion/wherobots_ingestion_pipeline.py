@@ -19,6 +19,31 @@ from sedona.spark import SedonaContext
 from pyspark.sql.functions import col, to_json, expr, lit, substring, when
 
 # ==============================================================================
+# Dependency Auto-Installation
+# ==============================================================================
+def ensure_dependencies():
+    """Auto-install missing pip packages on fresh Wherobots instances."""
+    import subprocess, sys
+    required = {
+        'requests': 'requests',
+        'pandas': 'pandas',
+        'geopandas': 'geopandas',
+        'paramiko': 'paramiko',
+    }
+    missing = []
+    for import_name, pip_name in required.items():
+        try:
+            __import__(import_name)
+        except ImportError:
+            missing.append(pip_name)
+    if missing:
+        print(f"Installing missing dependencies: {', '.join(missing)}")
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--quiet'] + missing)
+        print("Dependencies installed successfully.")
+    else:
+        print("All dependencies already present.")
+
+ensure_dependencies()
 # Helper Utilities
 # ==============================================================================
 
